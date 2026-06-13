@@ -1,4 +1,4 @@
--- Kaori AI — Database Schema (v8)
+-- Kaori AI — Database Schema (v9)
 -- SQLite with WAL mode, foreign keys enabled
 
 -- ══════════════════════════════════════════
@@ -15,7 +15,9 @@ CREATE TABLE IF NOT EXISTS users (
   spend_reset_date INTEGER NOT NULL DEFAULT (unixepoch()),
   briefing_cache TEXT,
   briefing_generated_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  is_pro INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- ══════════════════════════════════════════
@@ -42,6 +44,7 @@ CREATE TABLE IF NOT EXISTS conversations (
   title TEXT NOT NULL DEFAULT 'New Chat',
   provider TEXT NOT NULL DEFAULT 'anthropic',
   model TEXT NOT NULL DEFAULT 'claude-sonnet-4-20250514',
+  is_starred INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -68,6 +71,7 @@ CREATE TABLE IF NOT EXISTS user_memories (
   tags TEXT NOT NULL DEFAULT '[]',
   source_conv_id TEXT,
   created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
   expires_at INTEGER
 );
 
@@ -98,7 +102,9 @@ CREATE TABLE IF NOT EXISTS scheduled_tasks (
   cron_expression TEXT NOT NULL,
   action TEXT NOT NULL,
   payload TEXT NOT NULL,
-  active INTEGER NOT NULL DEFAULT 1
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 CREATE TABLE IF NOT EXISTS monitors (
@@ -109,7 +115,9 @@ CREATE TABLE IF NOT EXISTS monitors (
   condition TEXT NOT NULL,
   last_value TEXT,
   check_interval_mins INTEGER NOT NULL DEFAULT 60,
-  active INTEGER NOT NULL DEFAULT 1
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- ══════════════════════════════════════════
@@ -131,7 +139,8 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   subject TEXT NOT NULL,
   weak_topics TEXT,
-  date INTEGER NOT NULL DEFAULT (unixepoch())
+  date INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- ══════════════════════════════════════════
@@ -157,7 +166,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   done INTEGER NOT NULL DEFAULT 0,
   priority TEXT DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'high')),
   due_at INTEGER,
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 CREATE TABLE IF NOT EXISTS snippets (
@@ -167,7 +177,8 @@ CREATE TABLE IF NOT EXISTS snippets (
   content TEXT NOT NULL,
   language TEXT,
   tags TEXT NOT NULL DEFAULT '[]',
-  created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 -- ══════════════════════════════════════════

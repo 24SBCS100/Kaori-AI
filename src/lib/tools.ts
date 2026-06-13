@@ -31,6 +31,42 @@ export const TOOL_DEFINITIONS: AnthropicTool[] = [
       required: ["url"],
     },
   },
+  {
+    name: "open_application",
+    description: "Opens an application on the user's device. To force a desktop app to open, you MUST use its custom URI protocol (e.g. 'spotify://'). Also provide a fallback https URL.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        appName: {
+          type: "string",
+          description: "The name of the application (e.g., 'Spotify', 'Notion')",
+        },
+        uriScheme: {
+          type: "string",
+          description: "The custom URI protocol for the desktop app (e.g., 'spotify://', 'notion://', 'vscode://')",
+        },
+        fallbackUrl: {
+          type: "string",
+          description: "The https:// fallback URL if the app isn't installed (e.g., 'https://open.spotify.com')",
+        },
+      },
+      required: ["appName", "uriScheme", "fallbackUrl"],
+    },
+  },
+  {
+    name: "play_spotify",
+    description: "Searches for a song on Spotify and plays it on the user's device. Use this when the user asks to play a specific song or type of song on Spotify.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        songName: {
+          type: "string",
+          description: "The name of the song and artist to play",
+        },
+      },
+      required: ["songName"],
+    },
+  },
 ];
 
 export function getToolByName(name: string) {

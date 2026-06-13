@@ -37,9 +37,17 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json();
 
-    // Validate input
-    const email = validateEmail(body.email);
-    const password = validatePassword(body.password);
+    let email: string;
+    let password: string;
+    try {
+      email = validateEmail(body.email);
+      password = validatePassword(body.password);
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid credentials" },
+        { status: 401 }
+      );
+    }
 
     const user = findUserByEmail(email);
     if (!user) {

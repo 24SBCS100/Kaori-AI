@@ -50,8 +50,13 @@ export function checkAuthRateLimit(
  * Chat rate limit: 20 messages per minute per user.
  */
 export function checkChatRateLimit(
-  userId: string
+  userId: string,
+  isPro: boolean = false
 ): { allowed: boolean; retryAfterSec: number } {
+  if (isPro) {
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  
   const db = getDb();
   const now = Math.floor(Date.now() / 1000);
   const WINDOW = 60; // 1 minute

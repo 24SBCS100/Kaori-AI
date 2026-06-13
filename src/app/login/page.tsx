@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { login } from "@/components/auth";
 import Link from "next/link";
+import { ArrowRight, Lock, Mail, Sparkles } from "lucide-react";
+import { login } from "@/components/auth";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -20,78 +21,122 @@ export default function LoginPage() {
     try {
       await login(email, password);
       router.push("/");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+    } catch {
+      setError("Invalid email or password.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[hsl(var(--background))] p-4">
-      <div className="w-full max-w-sm animate-fade-in">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-14 h-14 rounded-2xl claude-gradient flex items-center justify-center text-white text-xl font-bold mx-auto mb-4 claude-glow">
-            K
-          </div>
-          <h1 className="text-2xl font-semibold text-[hsl(var(--foreground))]">Welcome back</h1>
-          <p className="text-sm text-[hsl(var(--muted-foreground))] mt-1">
-            Sign in to continue with Kaori
-          </p>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-              {error}
+    <main className="min-h-screen bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
+      <div className="grid min-h-screen lg:grid-cols-[1fr_440px]">
+        <section className="hidden lg:flex flex-col justify-between border-r border-[hsl(var(--border))] bg-[hsl(var(--sidebar))] p-10">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-[hsl(var(--primary))] text-white shadow-sm">
+              <Sparkles size={20} />
             </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium text-[hsl(var(--foreground))] mb-1.5">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-2.5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] outline-none focus:ring-2 focus:ring-[hsl(var(--primary)/0.3)] transition-all text-sm"
-              placeholder="you@example.com"
-            />
+            <div>
+              <div className="text-sm font-semibold">Kaori AI</div>
+              <div className="text-xs text-[hsl(var(--muted-foreground))]">Private workspace assistant</div>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-[hsl(var(--foreground))] mb-1.5">
-              Password
-            </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-2.5 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] outline-none focus:ring-2 focus:ring-[hsl(var(--primary)/0.3)] transition-all text-sm"
-              placeholder="••••••••"
-            />
+          <div className="max-w-xl">
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-[hsl(var(--primary))]">
+              Welcome back
+            </p>
+            <h1 className="mt-4 text-5xl font-semibold tracking-tight">
+              Continue your conversations without losing context.
+            </h1>
+            <p className="mt-5 text-base leading-7 text-[hsl(var(--muted-foreground))]">
+              Your chats, connected tools, and model preferences stay protected behind your account.
+            </p>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-[hsl(var(--primary))] text-white font-medium text-sm hover:opacity-90 disabled:opacity-50 transition-all"
-          >
-            {loading ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+          <div className="text-xs text-[hsl(var(--muted-foreground))]">
+            Encrypted conversation storage and session-based access.
+          </div>
+        </section>
 
-        <p className="text-center text-sm text-[hsl(var(--muted-foreground))] mt-6">
-          Don&apos;t have an account?{" "}
-          <Link href="/signup" className="text-[hsl(var(--primary))] hover:underline font-medium">
-            Sign up
-          </Link>
-        </p>
+        <section className="flex items-center justify-center px-5 py-10">
+          <div className="w-full max-w-sm animate-fade-in">
+            <div className="mb-8 lg:hidden">
+              <div className="mb-5 grid h-12 w-12 place-items-center rounded-xl bg-[hsl(var(--primary))] text-white shadow-sm">
+                <Sparkles size={22} />
+              </div>
+              <h1 className="text-3xl font-semibold tracking-tight">Sign in to Kaori</h1>
+              <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
+                Pick up where you left off.
+              </p>
+            </div>
+
+            <div className="mb-8 hidden lg:block">
+              <h2 className="text-2xl font-semibold tracking-tight">Sign in</h2>
+              <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">
+                Use your account credentials to continue.
+              </p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+                  {error}
+                </div>
+              )}
+
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium">Email</span>
+                <div className="flex items-center gap-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 focus-within:ring-2 focus-within:ring-[hsl(var(--primary)/0.25)]">
+                  <Mail size={17} className="text-[hsl(var(--muted-foreground))]" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-[hsl(var(--muted-foreground))]"
+                    placeholder="you@example.com"
+                  />
+                </div>
+              </label>
+
+              <label className="block">
+                <span className="mb-1.5 block text-sm font-medium">Password</span>
+                <div className="flex items-center gap-3 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] px-3 focus-within:ring-2 focus-within:ring-[hsl(var(--primary)/0.25)]">
+                  <Lock size={17} className="text-[hsl(var(--muted-foreground))]" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    minLength={8}
+                    autoComplete="current-password"
+                    className="h-11 w-full bg-transparent text-sm outline-none placeholder:text-[hsl(var(--muted-foreground))]"
+                    placeholder="Password"
+                  />
+                </div>
+              </label>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[hsl(var(--primary))] text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[hsl(var(--primary)/0.92)] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "Signing in..." : "Sign in"}
+                {!loading && <ArrowRight size={16} />}
+              </button>
+            </form>
+
+            <p className="mt-6 text-center text-sm text-[hsl(var(--muted-foreground))]">
+              New to Kaori?{" "}
+              <Link href="/signup" className="font-medium text-[hsl(var(--primary))] hover:underline">
+                Create an account
+              </Link>
+            </p>
+          </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

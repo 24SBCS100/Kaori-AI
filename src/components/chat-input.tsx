@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Plus, ArrowUp, Square, Mic, AudioLines } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, ArrowUp, Square, Mic, AudioLines, X } from "lucide-react";
 import ModelSelector from "./model-selector";
 
 export default function ChatInput({
@@ -21,10 +21,13 @@ export default function ChatInput({
 }) {
   const [value, setValue] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [listening, setListening] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const previewUrls = useMemo(
+    () => files.filter((f) => f.type.startsWith("image/")).map((f) => URL.createObjectURL(f)),
+    [files]
+  );
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -34,14 +37,8 @@ export default function ChatInput({
   }, [value]);
 
   useEffect(() => {
-    if (!files.length) {
-      setPreviewUrls([]);
-      return;
-    }
-    const urls = files.filter((f) => f.type.startsWith("image/")).map((f) => URL.createObjectURL(f));
-    setPreviewUrls(urls);
-    return () => urls.forEach((u) => URL.revokeObjectURL(u));
-  }, [files]);
+    return () => previewUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, [previewUrls]);
 
   const handleSend = () => {
     const text = value.trim();
@@ -49,7 +46,6 @@ export default function ChatInput({
     onSend(text, files.length ? files : null);
     setValue("");
     setFiles([]);
-    setPreviewUrls([]);
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
@@ -96,7 +92,7 @@ export default function ChatInput({
   };
 
   return (
-    <div className="shrink-0 px-4 pb-4 pt-2">
+    <div className="shrink-0 px-3 sm:px-4 pb-4 pt-2">
       <div className="max-w-3xl mx-auto">
         {/* File previews */}
         {previewUrls.length > 0 && (
@@ -110,9 +106,10 @@ export default function ChatInput({
                 />
                 <button
                   onClick={() => removeFile(i)}
-                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-neutral-800 text-white text-xs grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-neutral-800 text-white grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Remove image"
                 >
-                  ×
+                  <X size={12} />
                 </button>
               </div>
             ))}
@@ -120,7 +117,7 @@ export default function ChatInput({
         )}
 
         {/* Input Container */}
-        <div className="flex flex-col bg-white dark:bg-[#202020] rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-sm transition-all focus-within:ring-1 focus-within:ring-neutral-300 dark:focus-within:ring-neutral-700">
+        <div className="flex flex-col bg-white dark:bg-[#202020] rounded-2xl border border-neutral-200 dark:border-neutral-800 shadow-sm transition-all duration-300 focus-within:ring-4 focus-within:ring-[hsl(var(--primary)/0.15)] focus-within:border-[hsl(var(--primary)/0.4)] focus-within:shadow-md">
           
           <input
             ref={fileRef}
@@ -145,43 +142,47 @@ export default function ChatInput({
 
           {/* Bottom Toolbar */}
           <div className="flex items-center justify-between px-2 pb-2">
-            {/* Attachment Button */}
-            <button
-              onClick={() => fileRef.current?.click()}
-              className="h-9 w-9 shrink-0 grid place-items-center rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors"
-              title="Attach file"
-            >
-              <Plus size={20} strokeWidth={1.5} />
-            </button>
+            {/* Left: attach + model */}
+            <div className="flex items-center gap-1 min-w-0">
+              <button
+                onClick={() => fileRef.current?.click()}
+                className="h-9 w-9 shrink-0 grid place-items-center rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors"
+                title="Attach file"
+              >
+                <Plus size={20} strokeWidth={1.5} />
+              </button>
 
-            {/* Right Side: Model & Voice & Send */}
-            <div className="flex items-center gap-1.5 relative z-10">
-              <ModelSelector 
-                model={model} 
-                onChange={onModelChange} 
-                direction="up" 
-                minimal 
-              />
-
-              <div className="flex items-center gap-0.5 mr-1">
-                <button
-                  onClick={startVoice}
-                  className={`h-8 w-8 shrink-0 grid place-items-center rounded-lg transition-colors ${
-                    listening
-                      ? "text-red-400 bg-red-400/10 animate-pulse"
-                      : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
-                  }`}
-                  title="Voice input"
-                >
-                  <Mic size={18} strokeWidth={1.5} />
-                </button>
-                <button
-                  className="h-8 w-8 shrink-0 grid place-items-center rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors"
-                  title="Voice mode"
-                >
-                  <AudioLines size={18} strokeWidth={1.5} />
-                </button>
+              <div className="relative z-10 min-w-0">
+                <ModelSelector 
+                  model={model} 
+                  onChange={onModelChange} 
+                  direction="up" 
+                  minimal 
+                />
               </div>
+            </div>
+
+            {/* Right: voice + send */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                onClick={startVoice}
+                className={`h-8 w-8 shrink-0 grid place-items-center rounded-lg transition-colors ${
+                  listening
+                    ? "text-red-400 bg-red-400/10 animate-pulse"
+                    : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
+                }`}
+                title="Voice input"
+              >
+                <Mic size={18} strokeWidth={1.5} />
+              </button>
+              <button
+                className="h-8 w-8 shrink-0 grid place-items-center rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors"
+                title="Voice mode"
+              >
+                <AudioLines size={18} strokeWidth={1.5} />
+              </button>
+
+              <div className="w-px h-5 bg-neutral-200 dark:bg-neutral-700 mx-1" />
 
               {disabled ? (
                 <button

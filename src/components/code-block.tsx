@@ -22,7 +22,8 @@ export default function CodeBlock({
 }) {
   const [copied, setCopied] = useState(false);
   const codeString = extractText(children).replace(/\n$/, "");
-  const language = className?.replace("language-", "") || "code";
+  const match = /language-(\w+)/.exec(className || "");
+  const language = match ? match[1] : "code";
   const isInline = !className;
 
   const handleCopy = async () => {
@@ -64,8 +65,8 @@ export default function CodeBlock({
           )}
         </button>
       </div>
-      <pre className="p-4 overflow-x-auto text-sm leading-relaxed">
-        <code className={`${className} font-mono`}>{codeString}</code>
+      <pre className="p-4 overflow-x-auto text-sm leading-relaxed bg-[#0d1117]">
+        <code className={`${className} hljs font-mono`} style={{ background: 'transparent', padding: 0 }}>{children as React.ReactNode}</code>
       </pre>
     </div>
   );

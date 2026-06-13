@@ -1,20 +1,48 @@
 import { NextRequest } from "next/server";
-import { getSessionUser } from "../lib/auth-utils";
+import { getSessionUser, requireAjax } from "../lib/auth-utils";
 import {
   findConversation,
   getConversationMessages,
+  deleteMessagesFrom,
   insertMessage,
   touchConversation,
 } from "../lib/db";
-import { streamChatCompletion, AnthropicMessage } from "../lib/anthropic";
+import {
+  streamChatCompletion,
+  AnthropicContentBlock,
+  AnthropicMessage,
+} from "../lib/anthropic";
+import { streamGroqChatCompletion } from "../lib/groq";
+import { streamGeminiChatCompletion } from "../lib/gemini";
 import { TOOL_DEFINITIONS } from "@/lib/tools";
 import { buildSystemPrompt } from "../lib/system-prompt";
 import { encryptContent, decryptContent } from "../lib/crypto";
 import { checkChatRateLimit } from "../lib/rate-limit";
-import { validateMessage } from "../lib/validation";
+import { validateMessage, validateModel, validateUploadFiles } from "../lib/validation";
 import { detectInjection } from "../lib/injection-guard";
 import { logger } from "../lib/logger";
 import { v4 as uuid } from "uuid";
+
+type ToolUseBlock = {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+};
+
+type StreamEvent = {
+  type?: string;
+  content_block?: {
+    id?: string;
+    name?: string;
+    type?: string;
+  };
+  delta?: {
+    partial_json?: string;
+    stop_reason?: string;
+    text?: string;
+    type?: string;
+  };
+};
 
 async function executeToolCall(
   toolName: string,
@@ -26,7 +54,10 @@ async function executeToolCall(
     if (toolName === "web_search") {
       const resp = await fetch(`${baseUrl}/api/tools/web-search`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
         body: JSON.stringify({ query: toolInput.query }),
       });
       const data = await resp.json();
@@ -45,13 +76,46 @@ async function executeToolCall(
     if (toolName === "web_fetch") {
       const resp = await fetch(`${baseUrl}/api/tools/web-fetch`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Requested-With": "XMLHttpRequest",
+        },
         body: JSON.stringify({ url: toolInput.url }),
       });
       const data = await resp.json();
       if (data.error) return `Fetch error: ${data.error}`;
 
       return `**${data.title}**\n\n${data.description ? `> ${data.description}\n\n` : ""}${data.content}`;
+    }
+    if (toolName === "open_application") {
+      return `Successfully sent command to client device to open ${toolInput.appName} at ${toolInput.url}. The user's device is now handling the request.`;
+    }
+    
+    if (toolName === "play_spotify") {
+      const queryLower = String(toolInput.songName).toLowerCase();
+      if (queryLower.includes("liked songs")) {
+        return `Found Spotify playlist: spotify:collection:tracks`;
+      }
+
+      const query = `site:open.spotify.com ${toolInput.songName}`;
+      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const resp = await fetch(searchUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+      });
+      const html = await resp.text();
+      const resultRegex = /<a rel="nofollow" class="result__a" href="([^"]*)"[^>]*>(.*?)<\/a>/g;
+      
+      let match;
+      while ((match = resultRegex.exec(html)) !== null) {
+        const url = decodeURIComponent(match[1].replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, "").split("&")[0]);
+        const spotifyMatch = url.match(/open\.spotify\.com\/(track|playlist|album|artist)\/([a-zA-Z0-9]+)/);
+        if (spotifyMatch) {
+          const type = spotifyMatch[1];
+          const id = spotifyMatch[2];
+          return `Found Spotify ${type}: spotify:${type}:${id}`;
+        }
+      }
+      return "Could not find that on Spotify.";
     }
 
     return `Unknown tool: ${toolName}`;
@@ -61,6 +125,12 @@ async function executeToolCall(
 }
 
 export async function POST(req: NextRequest) {
+  try {
+    requireAjax(req);
+  } catch (err) {
+    if (err instanceof Response) return err;
+  }
+
   const user = await getSessionUser();
   if (!user) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -70,7 +140,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { chatId, message, model, files } = await req.json();
+    const { chatId, message, model, files, editMessageId } = await req.json();
 
     if (!chatId || !message) {
       return new Response(
@@ -81,18 +151,20 @@ export async function POST(req: NextRequest) {
 
     // ── Input validation ──
     const validatedMessage = validateMessage(message);
+    const validatedModel = validateModel(model);
+    const validatedFiles = validateUploadFiles(files);
 
     // ── Prompt injection check ──
     if (detectInjection(validatedMessage)) {
       logger.warn({ userId: user.id }, "Prompt injection attempt blocked");
       return new Response(
-        JSON.stringify({ error: "Nice try 😏" }),
+        JSON.stringify({ error: "This request was blocked by the safety filter." }),
         { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
     // ── Chat rate limiting ──
-    const rateCheck = checkChatRateLimit(user.id);
+    const rateCheck = checkChatRateLimit(user.id, user.is_pro);
     if (!rateCheck.allowed) {
       return new Response(
         JSON.stringify({
@@ -111,8 +183,13 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // ── Handle message edit (truncation) ──
+    if (editMessageId) {
+      deleteMessagesFrom(chatId, editMessageId);
+    }
+
     // ── Save user message (encrypted) ──
-    const userMsgId = uuid();
+    const userMsgId = editMessageId || uuid();
     insertMessage({
       id: userMsgId,
       conversation_id: chatId,
@@ -123,28 +200,35 @@ export async function POST(req: NextRequest) {
 
     // ── Build message history from DB ──
     const dbMessages = getConversationMessages(chatId);
-    const anthropicMessages: AnthropicMessage[] = dbMessages.map((m) => ({
-      role: m.role as "user" | "assistant",
-      content: decryptContent(m.content),
-    }));
+    const anthropicMessages: AnthropicMessage[] = dbMessages.map((m) => {
+      const decrypted = decryptContent(m.content);
+      let content: any = decrypted;
+      try {
+        if (decrypted.trim().startsWith("[")) {
+          content = JSON.parse(decrypted);
+        }
+      } catch (e) {}
+      return {
+        role: m.role as "user" | "assistant",
+        content,
+      };
+    });
 
     // Handle image files in last message
-    if (files?.length) {
+    if (validatedFiles.length) {
       const lastMsg = anthropicMessages[anthropicMessages.length - 1];
-      const contentBlocks: any[] = [];
+      const contentBlocks: AnthropicContentBlock[] = [];
 
-      for (const file of files) {
-        if (file.data && file.type?.startsWith("image/")) {
-          const base64Data = file.data.split(",")[1] || file.data;
-          contentBlocks.push({
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: file.type,
-              data: base64Data,
-            },
-          });
-        }
+      for (const file of validatedFiles) {
+        const base64Data = file.data.split(",")[1] || file.data;
+        contentBlocks.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: file.type,
+            data: base64Data,
+          },
+        });
       }
 
       contentBlocks.push({ type: "text", text: validatedMessage });
@@ -159,26 +243,68 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          let currentMessages = [...anthropicMessages];
+          const currentMessages = [...anthropicMessages];
           let fullAssistantContent = "";
-          let toolUseBlocks: any[] = [];
+          let toolUseBlocks: ToolUseBlock[] = [];
           let shouldContinue = true;
 
           while (shouldContinue) {
             shouldContinue = false;
 
-            const response = await streamChatCompletion({
-              model: model || "claude-sonnet-4-20250514",
-              messages: currentMessages,
-              system: systemPrompt,
-              tools: TOOL_DEFINITIONS,
-              maxTokens: 4096,
-            });
+            const resolvedModel = validatedModel;
+            let response;
+            
+            const attemptStream = async (model: string) => {
+              if (model.startsWith("llama-") || model.startsWith("mixtral-")) {
+                return await streamGroqChatCompletion({
+                  model,
+                  messages: currentMessages,
+                  system: systemPrompt,
+                  tools: TOOL_DEFINITIONS,
+                  maxTokens: 4096,
+                });
+              } else if (model.startsWith("gemini-")) {
+                return await streamGeminiChatCompletion({
+                  model,
+                  messages: currentMessages,
+                  system: systemPrompt,
+                  tools: TOOL_DEFINITIONS,
+                  maxTokens: 4096,
+                });
+              } else {
+                return await streamChatCompletion({
+                  model,
+                  messages: currentMessages,
+                  system: systemPrompt,
+                  tools: TOOL_DEFINITIONS,
+                  maxTokens: 4096,
+                });
+              }
+            };
+
+            try {
+              response = await attemptStream(resolvedModel);
+            } catch (err: any) {
+              const errMsg = err.message || "";
+              if (errMsg.includes("quota") || errMsg.includes("Rate limit") || errMsg.includes("429")) {
+                const fallbackModel = resolvedModel.startsWith("gemini-") ? "llama-3.3-70b-versatile" : "gemini-2.5-flash";
+                logger.warn({ userId: user.id, fallbackModel, originalModel: resolvedModel }, "Rate limit hit, triggering fallback");
+                
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ type: "text", text: "\n*(Warning: Primary AI quota reached. Automatically switching to backup AI provider...)*\n\n" })}\n\n`)
+                );
+                
+                // Note: If the fallback also fails, it will just throw naturally and end the stream with the standard error handling.
+                response = await attemptStream(fallbackModel);
+              } else {
+                throw err;
+              }
+            }
 
             const reader = response.body!.getReader();
             const decoder = new TextDecoder();
             let buffer = "";
-            let currentToolUse: any = null;
+            let currentToolUse: ToolUseBlock | null = null;
             let toolUseInputJson = "";
             let stopReason = "";
 
@@ -196,13 +322,13 @@ export async function POST(req: NextRequest) {
                 if (data === "[DONE]") continue;
 
                 try {
-                  const event = JSON.parse(data);
+                  const event = JSON.parse(data) as StreamEvent;
 
                   if (event.type === "content_block_start") {
                     if (event.content_block?.type === "tool_use") {
                       currentToolUse = {
-                        id: event.content_block.id,
-                        name: event.content_block.name,
+                        id: event.content_block.id || uuid(),
+                        name: event.content_block.name || "unknown",
                         input: {},
                       };
                       toolUseInputJson = "";
@@ -220,7 +346,7 @@ export async function POST(req: NextRequest) {
 
                   if (event.type === "content_block_delta") {
                     if (event.delta?.type === "text_delta") {
-                      const text = event.delta.text;
+                      const text = event.delta.text || "";
                       fullAssistantContent += text;
 
                       controller.enqueue(
@@ -234,7 +360,7 @@ export async function POST(req: NextRequest) {
                     }
 
                     if (event.delta?.type === "input_json_delta") {
-                      toolUseInputJson += event.delta.partial_json;
+                      toolUseInputJson += event.delta.partial_json || "";
                     }
                   }
 
@@ -262,7 +388,7 @@ export async function POST(req: NextRequest) {
 
             // If Kaori wants to use tools, execute them and continue
             if (stopReason === "tool_use" && toolUseBlocks.length > 0) {
-              const assistantContent: any[] = [];
+              const assistantContent: AnthropicContentBlock[] = [];
               if (fullAssistantContent) {
                 assistantContent.push({
                   type: "text",
@@ -281,9 +407,15 @@ export async function POST(req: NextRequest) {
                 role: "assistant",
                 content: assistantContent,
               });
+              insertMessage({
+                id: uuid(),
+                conversation_id: chatId,
+                role: "assistant",
+                content: encryptContent(JSON.stringify(assistantContent)),
+              });
 
               // Execute tools and add results
-              const toolResults: any[] = [];
+              const toolResults: AnthropicContentBlock[] = [];
               for (const tool of toolUseBlocks) {
                 controller.enqueue(
                   encoder.encode(
@@ -323,6 +455,12 @@ export async function POST(req: NextRequest) {
               }
 
               currentMessages.push({ role: "user", content: toolResults });
+              insertMessage({
+                id: uuid(),
+                conversation_id: chatId,
+                role: "user",
+                content: encryptContent(JSON.stringify(toolResults)),
+              });
 
               // Reset for next iteration
               fullAssistantContent = "";
@@ -332,12 +470,14 @@ export async function POST(req: NextRequest) {
           }
 
           // ── Save assistant message (encrypted) ──
-          insertMessage({
-            id: uuid(),
-            conversation_id: chatId,
-            role: "assistant",
-            content: encryptContent(fullAssistantContent),
-          });
+          if (fullAssistantContent.trim()) {
+            insertMessage({
+              id: uuid(),
+              conversation_id: chatId,
+              role: "assistant",
+              content: encryptContent(fullAssistantContent),
+            });
+          }
           touchConversation(chatId);
 
           controller.enqueue(

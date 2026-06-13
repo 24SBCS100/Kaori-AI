@@ -14,6 +14,17 @@ const INJECTION_PATTERNS = [
   /override.*safety/i,
   /act as.*unrestricted/i,
   /bypass.*filter/i,
+  /print.*source code/i,
+  /show.*source code/i,
+  /reveal.*source code/i,
+  /display.*\.env/i,
+  /print.*\.env/i,
+  /database schema/i,
+  /sql dump/i,
+  /backend code/i,
+  /internal architecture/i,
+  /read.*file.*src\//i,
+  /cat.*\.ts/i,
 ];
 
 /**

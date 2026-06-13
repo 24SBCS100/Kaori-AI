@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "../../lib/auth-utils";
+import { getSessionUser, requireAjax } from "../../lib/auth-utils";
 import {
   findConversation,
   getConversationMessages,
   updateConversationTitle,
+  toggleConversationStar,
   deleteConversation,
 } from "../../lib/db";
 import { decryptContent } from "../../lib/crypto";
+import { validateConversationTitle } from "../../lib/validation";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -35,6 +37,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
     id: conv.id,
     userId: conv.user_id,
     title: conv.title,
+    isStarred: conv.is_starred === 1,
     messages,
     createdAt: new Date(conv.created_at * 1000).toISOString(),
     updatedAt: new Date(conv.updated_at * 1000).toISOString(),
@@ -42,6 +45,12 @@ export async function GET(_req: NextRequest, { params }: Params) {
 }
 
 export async function PATCH(req: NextRequest, { params }: Params) {
+  try {
+    requireAjax(req);
+  } catch (err) {
+    if (err instanceof Response) return err;
+  }
+
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -55,20 +64,30 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Chat not found" }, { status: 404 });
   }
 
-  if (body.title) {
-    updateConversationTitle(id, body.title);
+  if (body.title !== undefined) {
+    updateConversationTitle(id, validateConversationTitle(body.title));
+  }
+  if (body.is_starred !== undefined) {
+    toggleConversationStar(id, body.is_starred ? 1 : 0);
   }
 
   const updated = findConversation(id)!;
   return NextResponse.json({
     id: updated.id,
     title: updated.title,
+    isStarred: updated.is_starred === 1,
     createdAt: new Date(updated.created_at * 1000).toISOString(),
     updatedAt: new Date(updated.updated_at * 1000).toISOString(),
   });
 }
 
-export async function DELETE(_req: NextRequest, { params }: Params) {
+export async function DELETE(req: NextRequest, { params }: Params) {
+  try {
+    requireAjax(req);
+  } catch (err) {
+    if (err instanceof Response) return err;
+  }
+
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -40,18 +40,18 @@ export default function ModelSelector({
         onClick={() => setOpen(!open)}
         className={
           minimal
-            ? "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors"
+            ? "flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/50 transition-colors max-w-[160px]"
             : "flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))] transition-colors"
         }
       >
-        {!minimal && getIcon(current)}
-        <span>{current.label}</span>
-        <ChevronDown size={14} className={`transition-transform ${open ? "rotate-180" : ""} ${minimal ? "text-neutral-400" : ""}`} />
+        {!minimal && <div className="shrink-0">{getIcon(current)}</div>}
+        <span className="truncate">{current.label}</span>
+        <ChevronDown size={14} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""} ${minimal ? "text-neutral-400" : ""}`} />
       </button>
 
       {open && (
-        <div 
-          className={`absolute ${direction === "up" ? "bottom-full mb-1" : "top-full mt-1"} right-0 sm:left-0 sm:right-auto w-[280px] sm:w-72 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--popover))] shadow-xl z-50 overflow-hidden animate-fade-in`}
+        <div
+          className={`absolute ${direction === "up" ? "bottom-full mb-1" : "top-full mt-1"} left-0 w-72 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--popover))] shadow-xl z-50 overflow-hidden animate-fade-in`}
         >
           {MODEL_OPTIONS.map((m) => (
             <button
@@ -64,7 +64,7 @@ export default function ModelSelector({
                 m.id === model ? "bg-[hsl(var(--muted))]" : ""
               }`}
             >
-              <div className="mt-0.5">{getIcon(m)}</div>
+              <div className="mt-0.5 shrink-0">{getIcon(m)}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-[hsl(var(--foreground))]">
@@ -81,7 +81,7 @@ export default function ModelSelector({
                 </p>
               </div>
               {m.id === model && (
-                <div className="w-2 h-2 rounded-full bg-[hsl(var(--primary))] mt-1.5" />
+                <div className="w-2 h-2 rounded-full bg-[hsl(var(--primary))] mt-1.5 shrink-0" />
               )}
             </button>
           ))}

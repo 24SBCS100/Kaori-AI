@@ -1,4 +1,4 @@
-export type ProviderId = "claude";
+export type ProviderId = "claude" | "groq" | "google";
 
 export type UploadFile = {
   url: string;
@@ -47,32 +47,40 @@ export type ModelOption = {
 
 export const MODEL_OPTIONS: ModelOption[] = [
   {
-    id: "claude-sonnet-4-20250514",
-    label: "Kaori 4 Sonnet",
-    provider: "claude",
-    description: "Balanced speed & intelligence",
-    badge: "Recommended",
-    supportsVision: true,
-    supportsThinking: true,
+    id: "llama-3.3-70b-versatile",
+    label: "Groq LLaMA 3.3 70B",
+    provider: "groq",
+    description: "Lightning fast, open-weights model",
+    badge: "Fastest",
+    supportsVision: false,
+    supportsThinking: false,
   },
   {
-    id: "claude-opus-4-20250514",
-    label: "Kaori 4 Opus",
-    provider: "claude",
-    description: "Most capable, best for complex tasks",
+    id: "gemini-2.5-pro",
+    label: "Gemini 2.5 Pro",
+    provider: "google",
+    description: "Google's most capable model, great for complex tasks",
     badge: "Most Powerful",
     supportsVision: true,
     supportsThinking: true,
   },
   {
-    id: "claude-3-5-haiku-20241022",
-    label: "Kaori 3.5 Haiku",
-    provider: "claude",
-    description: "Fastest responses, great for quick tasks",
-    badge: "Fastest",
+    id: "gemini-2.5-flash",
+    label: "Gemini 2.5 Flash",
+    provider: "google",
+    description: "Balanced speed & intelligence from Google",
+    badge: "Recommended",
     supportsVision: true,
     supportsThinking: false,
   },
+  {
+    id: "claude-sonnet-4-20250514",
+    label: "Kaori 4 Sonnet",
+    provider: "claude",
+    description: "Balanced speed & intelligence (Requires Key)",
+    supportsVision: true,
+    supportsThinking: true,
+  }
 ];
 
-export const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+export const DEFAULT_MODEL = "llama-3.3-70b-versatile";

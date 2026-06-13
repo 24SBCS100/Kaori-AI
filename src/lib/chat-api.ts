@@ -3,42 +3,21 @@ import { UploadFile } from "@/components/types";
 export type ChatThreadSummary = {
   id: string;
   title: string;
+  isStarred?: boolean;
   createdAt: string;
   updatedAt: string;
 };
 
-// ── Common headers (CSRF protection) ──
 const AJAX_HEADERS: HeadersInit = {
   "X-Requested-With": "XMLHttpRequest",
 };
 
-async function jsonOrThrow(res: Response) {
-  const text = await res.text();
-
-  // If unauthorized, try silent refresh before giving up
-  if (res.status === 401) {
-    const refreshed = await silentRefresh();
-    if (!refreshed) throw new Error("UNAUTHORIZED");
-    // Signal caller to retry — but we throw so caller can handle
-    throw new Error("TOKEN_REFRESHED");
-  }
-
-  if (!res.ok) {
-    const data = text ? JSON.parse(text) : {};
-    throw new Error(data.error || "Request failed");
-  }
-  return text ? JSON.parse(text) : null;
-}
-
-/**
- * Attempt to silently refresh the access token.
- * Returns true if refresh succeeded.
- */
 async function silentRefresh(): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/refresh", {
       method: "POST",
       credentials: "include",
+      headers: AJAX_HEADERS,
     });
     return res.ok;
   } catch {
@@ -46,9 +25,6 @@ async function silentRefresh(): Promise<boolean> {
   }
 }
 
-/**
- * Fetch with automatic retry after token refresh.
- */
 async function fetchWithRetry(
   url: string,
   init: RequestInit
@@ -58,7 +34,6 @@ async function fetchWithRetry(
   if (res.status === 401) {
     const refreshed = await silentRefresh();
     if (refreshed) {
-      // Retry the original request
       return fetch(url, { ...init, credentials: "include" });
     }
     throw new Error("UNAUTHORIZED");
@@ -114,11 +89,20 @@ export async function deleteChat(chatId: string) {
   });
 }
 
+export async function toggleStarChat(chatId: string, isStarred: boolean) {
+  return jsonFetchWithRetry(`/api/chats/${chatId}`, {
+    method: "PATCH",
+    headers: { ...AJAX_HEADERS, "Content-Type": "application/json" },
+    body: JSON.stringify({ is_starred: isStarred }),
+  });
+}
+
 export async function sendMessage({
   chatId,
   message,
   model,
   files,
+  editMessageId,
   onText,
   onToolStart,
   onToolExecuting,
@@ -131,6 +115,7 @@ export async function sendMessage({
   message: string;
   model: string;
   files?: UploadFile[];
+  editMessageId?: string;
   onText: (text: string) => void;
   onToolStart?: (tool: string) => void;
   onToolExecuting?: (tool: string, input: unknown) => void;
@@ -147,11 +132,10 @@ export async function sendMessage({
         ...AJAX_HEADERS,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ chatId, message, model, files }),
+      body: JSON.stringify({ chatId, message, model, files, editMessageId }),
       signal,
     });
 
-    // Auto-refresh on 401
     if (res.status === 401) {
       const refreshed = await silentRefresh();
       if (refreshed) {
@@ -162,7 +146,7 @@ export async function sendMessage({
             ...AJAX_HEADERS,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ chatId, message, model, files }),
+          body: JSON.stringify({ chatId, message, model, files, editMessageId }),
           signal,
         });
       } else {
@@ -218,7 +202,7 @@ export async function sendMessage({
               return;
           }
         } catch {
-          // skip
+          // Skip malformed stream chunks.
         }
       }
     }
@@ -232,5 +216,5 @@ export async function sendMessage({
 
 export function buildChatTitle(firstMessage: string): string {
   const clean = firstMessage.replace(/\n/g, " ").trim();
-  return clean.length > 40 ? clean.slice(0, 40) + "…" : clean;
+  return clean.length > 40 ? `${clean.slice(0, 40)}...` : clean;
 }

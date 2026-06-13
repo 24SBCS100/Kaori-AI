@@ -1,56 +1,76 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionUser, requireAjax } from "../../lib/auth-utils";
+import { validateSearchQuery } from "../../lib/validation";
+
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const { query } = await req.json();
-    if (!query) {
-      return NextResponse.json({ error: "Query is required" }, { status: 400 });
-    }
+    requireAjax(req);
+  } catch (err) {
+    if (err instanceof Response) return err;
+  }
 
-    // Use DuckDuckGo HTML search (no API key needed)
-    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const { query } = await req.json();
+    const validatedQuery = validateSearchQuery(query);
+
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(
+      validatedQuery
+    )}`;
     const resp = await fetch(searchUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       },
+      signal: AbortSignal.timeout(10000),
     });
 
-    const html = await resp.text();
+    if (!resp.ok) {
+      return NextResponse.json({ error: "Search failed" }, { status: 502 });
+    }
 
-    // Parse results from DuckDuckGo HTML
+    const html = await resp.text();
     const results: { title: string; url: string; snippet: string }[] = [];
-    const resultRegex = /<a rel="nofollow" class="result__a" href="([^"]*)"[^>]*>(.*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>(.*?)<\/a>/g;
+    const resultRegex =
+      /<a rel="nofollow" class="result__a" href="([^"]*)"[^>]*>(.*?)<\/a>[\s\S]*?<a class="result__snippet"[^>]*>(.*?)<\/a>/g;
 
     let match;
     while ((match = resultRegex.exec(html)) !== null && results.length < 8) {
-      const url = decodeURIComponent(match[1].replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, "").split("&")[0]);
-      const title = match[2].replace(/<[^>]*>/g, "").trim();
-      const snippet = match[3].replace(/<[^>]*>/g, "").trim();
+      const url = decodeURIComponent(
+        match[1].replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, "").split("&")[0]
+      );
+      const title = decodeHtml(match[2]);
+      const snippet = decodeHtml(match[3]);
 
       if (title && url && !url.includes("duckduckgo.com")) {
         results.push({ title, url, snippet });
       }
     }
 
-    // Fallback: if regex didn't match, try simpler parsing
-    if (results.length === 0) {
-      const simpleRegex = /<a[^>]*class="result__url"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
-      while ((match = simpleRegex.exec(html)) !== null && results.length < 5) {
-        results.push({
-          title: match[2].trim(),
-          url: match[1].trim(),
-          snippet: "No snippet available",
-        });
-      }
-    }
-
     return NextResponse.json({
-      query,
+      query: validatedQuery,
       results,
       resultCount: results.length,
     });
   } catch (err) {
-    console.error("Web search error:", err);
-    return NextResponse.json({ error: "Search failed" }, { status: 500 });
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Search failed" },
+      { status: 400 }
+    );
   }
 }

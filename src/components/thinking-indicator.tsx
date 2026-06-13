@@ -5,8 +5,8 @@ import { Globe, Loader2 } from "lucide-react";
 export default function ThinkingIndicator({ toolName }: { toolName?: string }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2 animate-fade-in">
-      <div className="w-7 h-7 rounded-full claude-gradient flex items-center justify-center text-white text-xs font-bold shrink-0">
-        K
+      <div className="w-7 h-7 rounded-full overflow-hidden shrink-0 border border-[hsl(var(--border))]">
+        <img src="/kaori-avatar.png" alt="Kaori" className="w-full h-full object-cover" />
       </div>
       <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl thinking-shimmer border border-[hsl(var(--border))]">
         {toolName ? (

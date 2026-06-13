@@ -4,12 +4,15 @@ import {
   clearAuthCookies,
   getRefreshTokenCookie,
   hashRefreshToken,
+  requireAjax,
 } from "../../lib/auth-utils";
 import { deleteRefreshToken, findRefreshTokenByHash } from "../../lib/db";
 import { logger } from "../../lib/logger";
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    requireAjax(req);
+
     const user = await getSessionUser();
 
     // Delete refresh token from DB if it exists
@@ -31,6 +34,8 @@ export async function POST() {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof Response) return err;
+
     logger.error({ err }, "Logout error");
     return NextResponse.json({ ok: true }); // don't fail logout
   }

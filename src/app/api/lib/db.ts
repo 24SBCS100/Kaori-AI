@@ -25,6 +25,24 @@ export function getDb(): Database.Database {
     _db.exec(schema);
   }
 
+  // Safe migrations
+  try {
+    _db.exec("ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;");
+  } catch (e: any) {
+    // Ignore if column already exists
+    if (!e.message.includes("duplicate column name")) {
+      console.error("Migration error:", e);
+    }
+  }
+
+  try {
+    _db.exec("ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0;");
+  } catch (e: any) {
+    if (!e.message.includes("duplicate column name")) {
+      console.error("Migration error:", e);
+    }
+  }
+
   return _db;
 }
 
@@ -42,6 +60,7 @@ export type DBUser = {
   spend_reset_date: number;
   briefing_cache: string | null;
   briefing_generated_at: number | null;
+  is_pro: number;
   created_at: number;
 };
 
@@ -73,6 +92,11 @@ export function createUser(user: {
   return findUserById(user.id)!;
 }
 
+export function updateUserProStatus(id: string, isPro: boolean) {
+  const db = getDb();
+  db.prepare("UPDATE users SET is_pro = ? WHERE id = ?").run(isPro ? 1 : 0, id);
+}
+
 // ══════════════════════════════════════════
 // CONVERSATION HELPERS
 // ══════════════════════════════════════════
@@ -83,6 +107,7 @@ export type DBConversation = {
   title: string;
   provider: string;
   model: string;
+  is_starred: number;
   created_at: number;
   updated_at: number;
 };
@@ -138,6 +163,13 @@ export function touchConversation(id: string) {
   ).run(id);
 }
 
+export function toggleConversationStar(id: string, isStarred: number) {
+  const db = getDb();
+  db.prepare(
+    "UPDATE conversations SET is_starred = ?, updated_at = unixepoch() WHERE id = ?"
+  ).run(isStarred, id);
+}
+
 export function deleteConversation(id: string) {
   const db = getDb();
   db.prepare("DELETE FROM conversations WHERE id = ?").run(id);
@@ -191,6 +223,14 @@ export function insertMessage(msg: {
   });
 }
 
+export function deleteMessagesFrom(conversationId: string, messageId: string) {
+  const db = getDb();
+  const targetMsg = db.prepare("SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?").get(messageId, conversationId) as { created_at: number } | undefined;
+  if (targetMsg) {
+    db.prepare("DELETE FROM messages WHERE conversation_id = ? AND created_at >= ?").run(conversationId, targetMsg.created_at);
+  }
+}
+
 // ══════════════════════════════════════════
 // REFRESH TOKEN HELPERS
 // ══════════════════════════════════════════
@@ -231,4 +271,50 @@ export function deleteRefreshToken(id: string) {
 export function deleteUserRefreshTokens(userId: string) {
   const db = getDb();
   db.prepare("DELETE FROM refresh_tokens WHERE user_id = ?").run(userId);
+}
+
+// ── OAuth Tokens ──
+
+export type DBOAuthToken = {
+  id: string;
+  user_id: string;
+  provider: string;
+  access_token_enc: string;
+  refresh_token_enc?: string | null;
+  expires_at?: number | null;
+  scope?: string | null;
+  created_at: number;
+};
+
+export function upsertOAuthToken(token: Omit<DBOAuthToken, "created_at">) {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO oauth_tokens (id, user_id, provider, access_token_enc, refresh_token_enc, expires_at, scope)
+     VALUES (@id, @user_id, @provider, @access_token_enc, @refresh_token_enc, @expires_at, @scope)
+     ON CONFLICT(user_id, provider) DO UPDATE SET
+       access_token_enc = excluded.access_token_enc,
+       refresh_token_enc = COALESCE(excluded.refresh_token_enc, oauth_tokens.refresh_token_enc),
+       expires_at = excluded.expires_at,
+       scope = excluded.scope`
+  ).run({
+    id: token.id,
+    user_id: token.user_id,
+    provider: token.provider,
+    access_token_enc: token.access_token_enc,
+    refresh_token_enc: token.refresh_token_enc || null,
+    expires_at: token.expires_at || null,
+    scope: token.scope || null,
+  });
+}
+
+export function getOAuthToken(userId: string, provider: string): DBOAuthToken | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM oauth_tokens WHERE user_id = ? AND provider = ?")
+    .get(userId, provider) as DBOAuthToken | undefined;
+}
+
+export function deleteOAuthToken(userId: string, provider: string) {
+  const db = getDb();
+  db.prepare("DELETE FROM oauth_tokens WHERE user_id = ? AND provider = ?").run(userId, provider);
 }

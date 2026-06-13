@@ -6,9 +6,11 @@ import ChatHeader from "./chat-header";
 import MessageArea from "./message-area";
 import ChatInput from "./chat-input";
 import AnimatedAvatar from "./animated-avatar";
+import SettingsModal from "./settings-modal";
 import { ChatMessage, DEFAULT_MODEL } from "./types";
 import { ChatThread } from "./chat-types";
 import { me, logout as apiLogout, AuthUser } from "./auth";
+import { BookOpen, Code2, ListChecks, PenLine, Sparkles } from "lucide-react";
 import {
   listChats,
   createChat,
@@ -17,7 +19,27 @@ import {
   fetchChat,
   sendMessage,
   buildChatTitle,
+  toggleStarChat,
 } from "@/lib/chat-api";
+
+type AvatarEmotion = "idle" | "happy" | "shy" | "caring" | "thinking" | "surprised";
+
+function getInitialModel() {
+  if (typeof window === "undefined") return DEFAULT_MODEL;
+  return localStorage.getItem("kaori_model") || DEFAULT_MODEL;
+}
+
+function getTimeGreeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 18) return "Good afternoon";
+  return "Good evening";
+}
+
+function getInitialSidebarOpen() {
+  if (typeof window === "undefined") return true;
+  return window.innerWidth >= 1024;
+}
 
 async function fileToDataUrl(
   file: File
@@ -40,8 +62,8 @@ async function fileToDataUrl(
 
 export default function ChatLayout() {
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [sidebarOpen, setSidebarOpen] = useState(getInitialSidebarOpen);
+  const [model, setModel] = useState(getInitialModel);
   const [typing, setTyping] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [toolInProgress, setToolInProgress] = useState<string | null>(null);
@@ -50,6 +72,9 @@ export default function ChatLayout() {
   const [chats, setChats] = useState<ChatThread[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [showAvatar, setShowAvatar] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState("chats");
+  const [greeting] = useState(getTimeGreeting);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -71,6 +96,7 @@ export default function ChatLayout() {
             id: c.id,
             title: c.title || "New chat",
             messages: [],
+            isStarred: c.isStarred,
             createdAt: c.createdAt,
             updatedAt: c.updatedAt,
           }));
@@ -92,7 +118,6 @@ export default function ChatLayout() {
         await handleNewChat();
       }
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-scroll
@@ -109,6 +134,7 @@ export default function ChatLayout() {
 
   // ── NEW CHAT ──
   async function handleNewChat() {
+    if (window.innerWidth < 1024) setSidebarOpen(false);
     try {
       const newChat = await createChat();
       const thread: ChatThread = {
@@ -128,6 +154,7 @@ export default function ChatLayout() {
   // ── SELECT CHAT ──
   async function handleSelectChat(id: string) {
     setActiveChatId(id);
+    if (window.innerWidth < 1024) setSidebarOpen(false);
 
     const existing = chats.find((c) => c.id === id);
     if (existing && existing.messages.length > 0) return;
@@ -165,6 +192,18 @@ export default function ChatLayout() {
       await deleteChat(id);
     } catch (err) {
       console.error("Delete error:", err);
+    }
+  }
+
+  // ── STAR CHAT ──
+  async function handleToggleStarChat(id: string, isStarred: boolean) {
+    updateChat(id, (c) => ({ ...c, isStarred }));
+    try {
+      await toggleStarChat(id, isStarred);
+    } catch (err) {
+      console.error("Star chat error:", err);
+      // Revert on error
+      updateChat(id, (c) => ({ ...c, isStarred: !isStarred }));
     }
   }
 
@@ -227,12 +266,30 @@ export default function ChatLayout() {
       onToolStart: (tool) => {
         setToolInProgress(tool);
       },
-      onToolExecuting: (tool) => {
+      onToolExecuting: (tool, input) => {
         setToolInProgress(tool);
+        if (tool === "open_application" && input && typeof input === "object") {
+          const { uriScheme, fallbackUrl } = input as {
+            uriScheme?: string;
+            fallbackUrl?: string;
+          };
+          if (uriScheme) {
+            window.location.href = uriScheme;
+            setTimeout(() => {
+              if (fallbackUrl) window.open(fallbackUrl, "_blank");
+            }, 1500);
+          }
+        }
       },
       onToolResult: (tool, result) => {
         setToolResults((prev) => [...prev, { tool, result }]);
         setToolInProgress(null);
+        if (tool === "play_spotify" && result.includes("spotify:")) {
+          const match = result.match(/(spotify:[a-zA-Z0-9:]+)/);
+          if (match) {
+            window.location.href = match[1];
+          }
+        }
       },
       onDone: () => {
         // Save assistant message locally
@@ -258,7 +315,7 @@ export default function ChatLayout() {
         const errMsg: ChatMessage = {
           id: `error-${Date.now()}`,
           role: "assistant",
-          content: `⚠️ **Error:** ${error}\n\nPlease check your API key in \`.env\` and try again.`,
+          content: `⚠️ **Error:** ${error}`,
           timestamp: new Date().toISOString(),
         };
         updateChat(activeChatId!, (c) => ({
@@ -268,6 +325,105 @@ export default function ChatLayout() {
         setTyping(false);
         setStreamingText("");
         setToolInProgress(null);
+        abortRef.current = null;
+      },
+    });
+  }
+
+  // ── EDIT & RESEND MESSAGE ──
+  async function handleEditSend(messageId: string, text: string) {
+    if (!activeChatId || !text) return;
+
+    const chat = chats.find(c => c.id === activeChatId);
+    if (!chat) return;
+
+    const msgIndex = chat.messages.findIndex(m => m.id === messageId);
+    if (msgIndex === -1) return;
+
+    // Truncate messages from this point locally
+    const newMessages = chat.messages.slice(0, msgIndex);
+    const editedMsg: ChatMessage = {
+      id: messageId, // Keep the same ID for the UI
+      role: "user",
+      content: text,
+      timestamp: new Date().toISOString(),
+    };
+    newMessages.push(editedMsg);
+
+    updateChat(activeChatId, (c) => ({
+      ...c,
+      messages: newMessages,
+      updatedAt: new Date().toISOString(),
+    }));
+
+    setTyping(true);
+    setStreamingText("");
+    setToolInProgress(null);
+    setToolResults([]);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let fullText = "";
+
+    await sendMessage({
+      chatId: activeChatId,
+      message: text,
+      model,
+      editMessageId: messageId,
+      signal: controller.signal,
+      onText: (chunk) => {
+        fullText += chunk;
+        setStreamingText(fullText);
+      },
+      onToolStart: (tool) => {
+        setToolInProgress(tool);
+      },
+      onToolExecuting: (tool, input) => {
+        setToolInProgress(tool);
+        if (tool === "open_application" && input && typeof input === "object") {
+          const { uriScheme, fallbackUrl } = input as {
+            uriScheme?: string;
+            fallbackUrl?: string;
+          };
+          if (uriScheme) {
+            window.location.href = uriScheme;
+            setTimeout(() => {
+              if (fallbackUrl) window.open(fallbackUrl, "_blank");
+            }, 1500);
+          }
+        }
+      },
+      onToolResult: (tool, result) => {
+        setToolResults((prev) => [...prev, { tool, result }]);
+        setToolInProgress(null);
+        if (tool === "play_spotify" && result.includes("spotify:")) {
+          const match = result.match(/(spotify:[a-zA-Z0-9:]+)/);
+          if (match) {
+            window.location.href = match[1];
+          }
+        }
+      },
+      onDone: () => {
+        const assistantMsg: ChatMessage = {
+          id: `asst-${Date.now()}`,
+          role: "assistant",
+          content: fullText,
+          timestamp: new Date().toISOString(),
+        };
+        updateChat(activeChatId, (c) => ({
+          ...c,
+          messages: [...c.messages, assistantMsg],
+        }));
+        setTyping(false);
+        setStreamingText("");
+        setToolInProgress(null);
+        setToolResults([]);
+        abortRef.current = null;
+      },
+      onError: (err) => {
+        console.error(err);
+        setTyping(false);
         abortRef.current = null;
       },
     });
@@ -297,7 +453,7 @@ export default function ChatLayout() {
     }
   }
 
-  let avatarEmotion: any = "idle";
+  let avatarEmotion: AvatarEmotion = "idle";
   let avatarSpeaking = false;
 
   if (toolInProgress) {
@@ -313,7 +469,7 @@ export default function ChatLayout() {
     <div className="h-screen flex overflow-hidden bg-[hsl(var(--background))]">
       {/* Floating Avatar */}
       {showAvatar && (
-        <div className="fixed bottom-0 right-[-30px] sm:right-[-50px] w-[280px] h-[450px] sm:w-[350px] sm:h-[550px] z-50 pointer-events-none drop-shadow-2xl">
+        <div className="hidden lg:block fixed bottom-0 right-[-30px] xl:right-[-54px] w-[260px] xl:w-[330px] h-[400px] xl:h-[520px] z-10 pointer-events-none drop-shadow-2xl opacity-95 transition-all duration-500">
           <AnimatedAvatar emotion={avatarEmotion} speaking={avatarSpeaking} />
         </div>
       )}
@@ -326,11 +482,17 @@ export default function ChatLayout() {
         onNewChat={handleNewChat}
         onRenameChat={handleRenameChat}
         onDeleteChat={handleDeleteChat}
+        onToggleStarChat={handleToggleStarChat}
         open={sidebarOpen}
         onToggle={() => setSidebarOpen((p) => !p)}
         user={user}
         onLogout={handleLogout}
+        onOpenSettings={() => setShowSettings(true)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
       />
+
+      <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} />
 
       {/* Main chat area */}
       <main
@@ -341,85 +503,97 @@ export default function ChatLayout() {
         <ChatHeader
           onToggleSidebar={() => setSidebarOpen((p) => !p)}
           sidebarOpen={sidebarOpen}
+          showAvatar={showAvatar}
+          onToggleAvatar={() => setShowAvatar((prev) => !prev)}
         />
-        
-        {/* Toggle Avatar Button */}
-        <button
-          onClick={() => setShowAvatar((prev) => !prev)}
-          className="absolute top-4 right-16 md:right-24 z-50 flex items-center justify-center p-2 rounded-lg text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100 bg-white/50 dark:bg-[#1a1a1a]/50 hover:bg-white dark:hover:bg-[#2a2a2a] backdrop-blur-md border border-neutral-200/50 dark:border-neutral-800/50 transition-all shadow-sm"
-          title={showAvatar ? "Hide Kaori" : "Show Kaori"}
-        >
-          {showAvatar ? (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
-          ) : (
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          )}
-        </button>
 
-        {isEmpty ? (
-          <div className="flex-1 flex flex-col items-center justify-center px-4 w-full max-w-4xl mx-auto animate-fade-in -mt-16">
-            {/* Greeting */}
-            <div className="flex items-center gap-3 mb-8">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className="text-[#d96b41]">
-                <path d="M12 2v20m10-10H2m17.071-7.071L4.93 19.07M19.071 19.071L4.93 4.93" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <h1 className="text-4xl sm:text-5xl font-serif text-neutral-800 dark:text-neutral-200">
-                Good evening, {user?.name?.toLowerCase() || "hari karthick"}
-              </h1>
-            </div>
-            
-            {/* Chat Input */}
-            <div className="w-full">
-              <ChatInput
-                onSend={handleSend}
-                disabled={typing}
-                onStop={handleStop}
-                model={model}
-                onModelChange={setModel}
-                placeholder="How can I help you today?"
-              />
-            </div>
-
-            {/* Suggestion Chips */}
-            <div className="flex flex-wrap items-center justify-center gap-3 mt-4">
-              {[
-                { icon: "</>", text: "Code" },
-                { icon: "🏷️", text: "Create" },
-                { icon: "🎓", text: "Learn" },
-                { icon: "✏️", text: "Write" },
-                { icon: "☕", text: "Life stuff" },
-              ].map((chip, i) => (
-                <button
-                  key={i}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-[#333333] hover:bg-neutral-100 dark:hover:bg-neutral-700 transition-colors text-sm font-medium text-neutral-700 dark:text-neutral-300"
-                >
-                  <span className="text-neutral-500 dark:text-neutral-400 font-mono">{chip.icon}</span>
-                  {chip.text}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
+        {activeTab === "chats" ? (
           <>
-            <MessageArea
-              messages={activeChat?.messages || []}
-              typing={typing}
-              toolInProgress={toolInProgress}
-              toolResults={toolResults}
-              streamingText={streamingText}
-            />
+            {isEmpty ? (
+              <div className="flex-1 flex flex-col items-center justify-center px-4 sm:px-6 w-full max-w-4xl mx-auto animate-fade-in pb-12 sm:pb-24">
+                <div className="flex flex-col items-center text-center mb-8">
+                  <div className="mb-5 grid h-12 w-12 place-items-center rounded-2xl bg-[hsl(var(--primary)/0.12)] text-[hsl(var(--primary))] ring-1 ring-[hsl(var(--primary)/0.22)]">
+                    <Sparkles size={24} strokeWidth={1.8} />
+                  </div>
+                  <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight text-neutral-900 dark:text-neutral-100">
+                    {greeting}, {user?.name?.split(" ")[0] || "there"}
+                  </h1>
+                  <p className="mt-3 max-w-xl text-sm sm:text-base text-neutral-500 dark:text-neutral-400">
+                    Start a focused chat, attach an image, or choose the best model for the task.
+                  </p>
+                </div>
+                
+                <div className="w-full relative z-20">
+                  <ChatInput
+                    onSend={handleSend}
+                    disabled={typing}
+                    onStop={handleStop}
+                    model={model}
+                    onModelChange={setModel}
+                    placeholder="How can I help you today?"
+                  />
+                </div>
 
-            <div ref={bottomRef} />
+                <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-center gap-2.5 mt-5 w-full max-w-3xl">
+                  {[
+                    { icon: Code2, text: "Code", prompt: "Help me write some code" },
+                    { icon: Sparkles, text: "Create", prompt: "Help me create something new" },
+                    { icon: BookOpen, text: "Learn", prompt: "Explain a complex topic clearly" },
+                    { icon: PenLine, text: "Write", prompt: "Help me write an email or blog post" },
+                    { icon: ListChecks, text: "Plan", prompt: "Help me organize my next steps" },
+                  ].map((chip, i) => {
+                    const Icon = chip.icon;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => handleSend(chip.prompt, null)}
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 shadow-sm transition-all duration-300 hover:border-neutral-300 hover:bg-neutral-50 hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:scale-95 dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800"
+                      >
+                        <Icon size={16} className="text-neutral-500 dark:text-neutral-400" />
+                        {chip.text}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <>
+                <MessageArea
+                  messages={activeChat?.messages || []}
+                  typing={typing}
+                  toolInProgress={toolInProgress}
+                  toolResults={toolResults}
+                  onEditSubmit={handleEditSend}
+                  streamingText={streamingText}
+                />
 
-            <ChatInput
-              onSend={handleSend}
-              disabled={typing}
-              onStop={handleStop}
-              model={model}
-              onModelChange={setModel}
-              placeholder="Reply to Kaori"
-            />
+                <div ref={bottomRef} />
+
+                <ChatInput
+                  onSend={handleSend}
+                  disabled={typing}
+                  onStop={handleStop}
+                  model={model}
+                  onModelChange={setModel}
+                  placeholder="Reply to Kaori"
+                />
+              </>
+            )}
           </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center animate-fade-in p-8">
+            <div className="w-16 h-16 rounded-2xl bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center mb-6">
+              {activeTab === 'projects' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg> :
+               activeTab === 'artifacts' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg> :
+               activeTab === 'code' ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-neutral-400"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg> : null}
+            </div>
+            <h2 className="text-2xl font-semibold text-neutral-800 dark:text-neutral-200 mb-2 capitalize">
+              {activeTab} Workspace
+            </h2>
+            <p className="text-neutral-500 max-w-sm">
+              This feature is scheduled for Phase 6 of the Kaori AI Godmode plan. Coming soon!
+            </p>
+          </div>
         )}
       </main>
     </div>

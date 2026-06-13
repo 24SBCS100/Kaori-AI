@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   MessageSquarePlus, 
@@ -9,7 +8,9 @@ import {
   Blocks, 
   Code,
   PanelLeftClose,
-  ChevronDown
+  ChevronDown,
+  Trash2,
+  Star
 } from "lucide-react";
 import { ChatThread } from "./chat-types";
 
@@ -18,12 +19,14 @@ export default function Sidebar({
   activeChatId,
   onSelectChat,
   onNewChat,
-  onRenameChat,
   onDeleteChat,
+  onToggleStarChat,
   open,
   onToggle,
   user,
-  onLogout,
+  onOpenSettings,
+  activeTab,
+  onTabChange,
 }: {
   chats: ChatThread[];
   activeChatId: string;
@@ -31,11 +34,19 @@ export default function Sidebar({
   onNewChat: () => void;
   onRenameChat: (id: string, title: string) => void;
   onDeleteChat: (id: string) => void;
+  onToggleStarChat: (id: string, isStarred: boolean) => void;
   open: boolean;
   onToggle: () => void;
   user: { id: string; name: string; email: string } | null;
   onLogout: () => void;
+  onOpenSettings: () => void;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }) {
+  const closeMobile = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 1024) onToggle();
+  };
+
   return (
     <>
       {/* Backdrop */}
@@ -74,25 +85,37 @@ export default function Sidebar({
         {/* Main Nav Items */}
         <div className="px-3 space-y-0.5 mt-2">
           <button 
-            onClick={onNewChat}
+            onClick={() => { onNewChat(); closeMobile(); }}
             className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors"
           >
             <MessageSquarePlus size={16} strokeWidth={1.5} />
             New chat
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors">
+          <button 
+            onClick={() => { onTabChange('chats'); closeMobile(); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'chats' ? 'bg-neutral-200/80 dark:bg-neutral-800 font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800'}`}
+          >
             <MessageSquare size={16} strokeWidth={1.5} />
             Chats
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors">
+          <button 
+            onClick={() => { onTabChange('projects'); closeMobile(); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'projects' ? 'bg-neutral-200/80 dark:bg-neutral-800 font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800'}`}
+          >
             <Archive size={16} strokeWidth={1.5} />
             Projects
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors">
+          <button 
+            onClick={() => { onTabChange('artifacts'); closeMobile(); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'artifacts' ? 'bg-neutral-200/80 dark:bg-neutral-800 font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800'}`}
+          >
             <Blocks size={16} strokeWidth={1.5} />
             Artifacts
           </button>
-          <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors">
+          <button 
+            onClick={() => { onTabChange('code'); closeMobile(); }}
+            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${activeTab === 'code' ? 'bg-neutral-200/80 dark:bg-neutral-800 font-medium text-neutral-900 dark:text-neutral-100' : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800'}`}
+          >
             <Code size={16} strokeWidth={1.5} />
             Code
           </button>
@@ -100,19 +123,49 @@ export default function Sidebar({
 
         <div className="flex-1 overflow-y-auto px-3 mt-6">
           {/* Starred */}
-          <div className="mb-6">
-            <div className="px-3 py-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
-              Starred
+          {chats.some(c => c.isStarred) && (
+            <div className="mb-6">
+              <div className="px-3 py-1.5 text-xs font-medium text-neutral-500 dark:text-neutral-400">
+                Starred
+              </div>
+              <div className="space-y-0.5">
+                {chats.filter(c => c.isStarred).map(chat => {
+                  const active = chat.id === activeChatId;
+                  return (
+                    <div
+                      key={chat.id}
+                      className={`group relative flex items-center w-full rounded-lg transition-colors ${
+                        active
+                          ? "bg-[#efefef] dark:bg-[#2a2a2a]"
+                          : "hover:bg-neutral-200/50 dark:hover:bg-neutral-800"
+                      }`}
+                    >
+                      <button
+                        onClick={() => { onSelectChat(chat.id); closeMobile(); }}
+                        className={`flex-1 text-left px-3 py-2 text-sm truncate ${
+                          active
+                            ? "text-neutral-900 dark:text-neutral-100"
+                            : "text-neutral-700 dark:text-neutral-300"
+                        }`}
+                      >
+                        {chat.title}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleStarChat(chat.id, false);
+                        }}
+                        className="absolute right-2 p-1.5 opacity-0 group-hover:opacity-100 transition-opacity rounded-md hover:bg-neutral-300/50 dark:hover:bg-neutral-700 text-yellow-500"
+                        title="Unstar chat"
+                      >
+                        <Star size={14} fill="currentColor" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div className="space-y-0.5">
-              <button className="w-full text-left px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors truncate">
-                Seasonal Produce Guide
-              </button>
-              <button className="w-full text-left px-3 py-2 rounded-lg text-sm text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors truncate">
-                Imagining Alternate Workplace...
-              </button>
-            </div>
-          </div>
+          )}
 
           {/* Recents */}
           <div>
@@ -123,17 +176,49 @@ export default function Sidebar({
               {chats.slice(0, 10).map((chat) => {
                 const active = chat.id === activeChatId;
                 return (
-                  <button
+                  <div
                     key={chat.id}
-                    onClick={() => onSelectChat(chat.id)}
-                    className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${
+                    className={`group relative flex items-center w-full rounded-lg transition-colors ${
                       active
-                        ? "bg-[#efefef] dark:bg-[#2a2a2a] text-neutral-900 dark:text-neutral-100"
-                        : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-200/50 dark:hover:bg-neutral-800"
+                        ? "bg-[#efefef] dark:bg-[#2a2a2a]"
+                        : "hover:bg-neutral-200/50 dark:hover:bg-neutral-800"
                     }`}
                   >
-                    {chat.title}
-                  </button>
+                    <button
+                      onClick={() => { onSelectChat(chat.id); closeMobile(); }}
+                      className={`flex-1 text-left px-3 py-2 text-sm truncate ${
+                        active
+                          ? "text-neutral-900 dark:text-neutral-100"
+                          : "text-neutral-700 dark:text-neutral-300"
+                      }`}
+                    >
+                      {chat.title}
+                    </button>
+                    <div className="absolute right-2 flex items-center opacity-0 group-hover:opacity-100 transition-opacity gap-0.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleStarChat(chat.id, !chat.isStarred);
+                        }}
+                        className={`p-1.5 rounded-md hover:bg-neutral-300/50 dark:hover:bg-neutral-700 ${
+                          chat.isStarred ? "text-yellow-500" : "text-neutral-500 hover:text-yellow-500"
+                        }`}
+                        title={chat.isStarred ? "Unstar chat" : "Star chat"}
+                      >
+                        <Star size={14} fill={chat.isStarred ? "currentColor" : "none"} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteChat(chat.id);
+                        }}
+                        className="p-1.5 rounded-md hover:bg-neutral-300/50 dark:hover:bg-neutral-700 text-neutral-500 hover:text-red-500"
+                        title="Delete chat"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
               {chats.length === 0 && (
@@ -146,7 +231,7 @@ export default function Sidebar({
         {/* User section */}
         <div className="p-4">
           <button 
-            onClick={onLogout}
+            onClick={() => { onOpenSettings(); closeMobile(); }}
             className="w-full flex items-center justify-between gap-3 px-2 py-2 rounded-xl hover:bg-neutral-200/50 dark:hover:bg-neutral-800 transition-colors group"
           >
             <div className="flex items-center gap-3 overflow-hidden">
@@ -155,10 +240,10 @@ export default function Sidebar({
               </div>
               <div className="flex-1 min-w-0 text-left">
                 <div className="text-sm font-medium text-neutral-800 dark:text-neutral-200 truncate">
-                  {user ? user.name : "Sarah Chen"}
+                  {user ? user.name : "Account"}
                 </div>
                 <div className="text-xs text-neutral-500 dark:text-neutral-400 truncate">
-                  Pro plan
+                  {user?.email || "Signed in"}
                 </div>
               </div>
             </div>

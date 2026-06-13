@@ -5,6 +5,7 @@ import {
   hashRefreshToken,
   issueAccessToken,
   issueRefreshToken,
+  requireAjax,
   setAuthCookies,
 } from "../../lib/auth-utils";
 import {
@@ -24,6 +25,8 @@ const REFRESH_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
  */
 export async function POST(req: Request) {
   try {
+    requireAjax(req);
+
     const refreshRaw = await getRefreshTokenCookie();
     if (!refreshRaw) {
       return NextResponse.json(
@@ -72,6 +75,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err) {
+    if (err instanceof Response) return err;
+
     logger.error({ err }, "Refresh token error");
     return NextResponse.json(
       { error: "Internal server error" },

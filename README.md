@@ -1,36 +1,83 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kaori AI 🌸
 
-## Getting Started
+Kaori AI is an advanced, multi-modal AI assistant built with Next.js and SQLite. It goes beyond simple chat by offering long-term memory, scheduled background tasks, web monitoring, and productivity tools, providing a deeply personalized and context-aware experience.
 
-First, run the development server:
+## ✨ Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+- **Multi-Provider LLM Support:** Seamlessly switch between Anthropic, Groq, and other OpenAI-compatible APIs.
+- **Long-Term Memory System:** Kaori AI remembers user preferences, past conversations, and extracted facts.
+- **Scheduled Tasks & Web Monitors:** Automate background tasks and set up cron-like monitors for web changes.
+- **Productivity & Study Tools:** Integrated task management, code snippet library, and study session tracking.
+- **OAuth Integrations:** Connect your Google account to allow Kaori AI to read your Drive or send Gmails on your behalf.
+- **Pro Tier System:** Built-in support for Pro users with extended limits and capabilities.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🛠️ Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **Framework:** [Next.js](https://nextjs.org/) (App Router)
+- **Language:** TypeScript
+- **Database:** SQLite (with WAL mode enabled for high concurrency)
+- **Authentication:** Custom session-based auth with refresh token rotation + Google OAuth
+- **AI Integration:** Anthropic SDK, Groq (via custom adapter)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 🗄️ Database Schema Overview (v9)
 
-## Learn More
+The application uses a highly optimized SQLite database designed for edge-like performance.
 
-To learn more about Next.js, take a look at the following resources:
+- **`users` & `auth`**: Handles robust user management, pro tiers, and refresh token rotation.
+- **`conversations` & `messages`**: Stores chat histories, tool usages, and reactions.
+- **`user_memories`**: The core of the long-term memory system.
+- **`scheduled_tasks` & `monitors`**: Manages active automated actions.
+- **`tasks` & `snippets`**: Drives the productivity suite.
+- **`oauth_tokens`**: Securely stores AES-256-GCM encrypted tokens for external integrations.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🚀 Getting Started
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Prerequisites
 
-## Deploy on Vercel
+- Node.js (v18+)
+- npm, yarn, pnpm, or bun
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Installation
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/your-username/kaori-ai.git
+   cd kaori-ai
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+3. **Environment Setup:**
+   Create a `.env.local` file in the root directory and add your API keys:
+   ```env
+   # AI Providers
+   ANTHROPIC_API_KEY=your_anthropic_key
+   GROQ_API_KEY=your_groq_key
+
+   # Google OAuth (Optional)
+   GOOGLE_CLIENT_ID=your_google_client_id
+   GOOGLE_CLIENT_SECRET=your_google_client_secret
+   GOOGLE_REDIRECT_URI=http://localhost:3000/api/auth/google/callback
+   ```
+
+4. **Initialize Database:**
+   The SQLite database (`schema.sql`) will be automatically applied based on your database configuration scripts.
+
+5. **Run the Development Server:**
+   ```bash
+   npm run dev
+   ```
+
+6. **Open the App:**
+   Visit [http://localhost:3000](http://localhost:3000) in your browser. Well our chatbot is still in development so there may be some bugs, that's why I'm providing the source code here instead of a live demo, so you can test it out yourself. ~hehe sorry
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## 📜 License
+
+This project is licensed under the MIT License.

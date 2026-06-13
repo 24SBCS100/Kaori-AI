@@ -27,6 +27,7 @@ export async function me(): Promise<AuthUser | null> {
       const refreshRes = await fetch("/api/auth/refresh", {
         method: "POST",
         credentials: "include",
+        headers: AJAX_HEADERS,
       });
       if (refreshRes.ok) {
         // Retry /me

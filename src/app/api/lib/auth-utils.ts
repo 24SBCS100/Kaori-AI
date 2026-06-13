@@ -3,27 +3,34 @@ import crypto from "crypto";
 import { cookies } from "next/headers";
 import { findUserById } from "./db";
 
-// ── Secrets ──
-const JWT_SECRET = process.env.JWT_SECRET || "claude-ai-secret-key-change-me-in-production";
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "refresh-secret-change-me-in-production";
+const DEFAULT_JWT_SECRET = "claude-ai-secret-key-change-me-in-production";
+const DEFAULT_REFRESH_SECRET = "refresh-secret-change-me-in-production";
 
-// ── Cookie names ──
+const JWT_SECRET = process.env.JWT_SECRET || DEFAULT_JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || DEFAULT_REFRESH_SECRET;
+
+if (process.env.NODE_ENV === "production") {
+  const hasWeakAccessSecret =
+    !process.env.JWT_SECRET || process.env.JWT_SECRET === DEFAULT_JWT_SECRET;
+  const hasWeakRefreshSecret =
+    !process.env.JWT_REFRESH_SECRET ||
+    process.env.JWT_REFRESH_SECRET === DEFAULT_REFRESH_SECRET;
+
+  if (hasWeakAccessSecret || hasWeakRefreshSecret) {
+    throw new Error("Strong JWT_SECRET and JWT_REFRESH_SECRET are required in production");
+  }
+}
+
 const ACCESS_COOKIE = "kaori_access";
 const REFRESH_COOKIE = "kaori_refresh";
 
-// ── TTLs ──
 const ACCESS_TTL = 15 * 60; // 15 minutes
 const REFRESH_TTL = 7 * 24 * 60 * 60; // 7 days
 
-// ── Types ──
 export type AuthPayload = {
   userId: string;
   email: string;
 };
-
-// ══════════════════════════════════════════
-// ACCESS TOKENS
-// ══════════════════════════════════════════
 
 export function issueAccessToken(userId: string, email: string): string {
   return jwt.sign({ userId, email }, JWT_SECRET, { expiresIn: ACCESS_TTL });
@@ -37,23 +44,15 @@ export function verifyAccessToken(token: string): AuthPayload | null {
   }
 }
 
-// ══════════════════════════════════════════
-// REFRESH TOKENS
-// ══════════════════════════════════════════
-
 export function issueRefreshToken(): { raw: string; hash: string } {
   const raw = crypto.randomBytes(48).toString("hex");
-  const hash = crypto.createHash("sha256").update(raw).digest("hex");
+  const hash = hashRefreshToken(raw);
   return { raw, hash };
 }
 
 export function hashRefreshToken(raw: string): string {
-  return crypto.createHash("sha256").update(raw).digest("hex");
+  return crypto.createHmac("sha256", JWT_REFRESH_SECRET).update(raw).digest("hex");
 }
-
-// ══════════════════════════════════════════
-// COOKIE HELPERS
-// ══════════════════════════════════════════
 
 const COOKIE_BASE = {
   httpOnly: true,
@@ -88,10 +87,6 @@ export async function clearAuthCookies() {
   cookieStore.delete(REFRESH_COOKIE);
 }
 
-// ══════════════════════════════════════════
-// SESSION HELPER
-// ══════════════════════════════════════════
-
 export async function getSessionUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get(ACCESS_COOKIE)?.value;
@@ -103,40 +98,22 @@ export async function getSessionUser() {
   const user = findUserById(payload.userId);
   if (!user) return null;
 
-  return { id: user.id, name: user.name, email: user.email };
+  return { id: user.id, name: user.name, email: user.email, is_pro: user.is_pro === 1 };
 }
 
-/**
- * Get the raw refresh token from cookie (for refresh endpoint).
- */
 export async function getRefreshTokenCookie(): Promise<string | undefined> {
   const cookieStore = await cookies();
   return cookieStore.get(REFRESH_COOKIE)?.value;
 }
 
-// ══════════════════════════════════════════
-// CSRF PROTECTION
-// ══════════════════════════════════════════
-
-/**
- * Verify that the request came from JavaScript (not a form submission).
- * All API calls must include `X-Requested-With: XMLHttpRequest`.
- */
 export function requireAjax(req: Request): void {
   if (req.headers.get("X-Requested-With") !== "XMLHttpRequest") {
-    throw new Response(
-      JSON.stringify({ error: "CSRF check failed" }),
-      {
-        status: 403,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
+    throw new Response(JSON.stringify({ error: "CSRF check failed" }), {
+      status: 403,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
-
-// ══════════════════════════════════════════
-// IP EXTRACTION
-// ══════════════════════════════════════════
 
 export function getClientIp(req: Request): string {
   return (
@@ -144,4 +121,47 @@ export function getClientIp(req: Request): string {
     req.headers.get("x-real-ip") ||
     "unknown"
   );
+}
+
+export function getOAuthStateCookieName(provider: string): string {
+  return `kaori_oauth_state_${provider}`;
+}
+
+function signOAuthState(provider: string, userId: string, state: string): string {
+  return crypto
+    .createHmac("sha256", JWT_REFRESH_SECRET)
+    .update(`${provider}:${userId}:${state}`)
+    .digest("base64url");
+}
+
+export function createOAuthState(provider: string, userId: string) {
+  const state = crypto.randomBytes(24).toString("base64url");
+  return {
+    state,
+    cookieValue: `${userId}.${state}.${signOAuthState(provider, userId, state)}`,
+  };
+}
+
+export function verifyOAuthState(
+  provider: string,
+  returnedState: string | null,
+  cookieValue: string | undefined
+): string | null {
+  if (!returnedState || !cookieValue) return null;
+
+  const [userId, state, signature] = cookieValue.split(".");
+  if (!userId || !state || !signature || state !== returnedState) return null;
+
+  const expected = signOAuthState(provider, userId, state);
+  const expectedBuffer = Buffer.from(expected);
+  const signatureBuffer = Buffer.from(signature);
+
+  if (
+    expectedBuffer.length !== signatureBuffer.length ||
+    !crypto.timingSafeEqual(expectedBuffer, signatureBuffer)
+  ) {
+    return null;
+  }
+
+  return userId;
 }

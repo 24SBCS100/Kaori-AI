@@ -63,7 +63,43 @@ export async function streamChatCompletion({
 
   if (!resp.ok) {
     const errBody = await resp.text();
-    throw new Error(`Anthropic API error (${resp.status}): ${errBody}`);
+    let userMsg = `API error (${resp.status})`;
+
+    if (resp.status === 429) {
+      userMsg = "Model quota ended. Please try again later.";
+      const retryAfter = resp.headers.get("retry-after");
+      if (retryAfter) {
+        const seconds = parseInt(retryAfter, 10);
+        if (!isNaN(seconds)) {
+          if (seconds < 60) {
+            userMsg = `Model quota ended. Please try again after ${seconds} seconds.`;
+          } else {
+            const minutes = Math.ceil(seconds / 60);
+            userMsg = `Model quota ended. Please try again after ${minutes} minute${minutes > 1 ? 's' : ''}.`;
+          }
+        }
+      } else {
+        // Fallback for anthropic JSON parsing
+        try {
+           const errJson = JSON.parse(errBody);
+           const msg = errJson.error?.message || "";
+           const retryMatch = msg.match(/try again in ([0-9.]+)s/i) || msg.match(/retry in ([0-9.]+)s/i);
+           if (retryMatch) {
+             const seconds = parseFloat(retryMatch[1]);
+             if (seconds < 60) {
+               userMsg = `Model quota ended. Please try again after ${Math.ceil(seconds)} seconds.`;
+             } else {
+               const minutes = Math.ceil(seconds / 60);
+               userMsg = `Model quota ended. Please try again after ${minutes} minute${minutes > 1 ? 's' : ''}.`;
+             }
+           }
+        } catch(e) {}
+      }
+    } else {
+      userMsg += `: ${errBody}`;
+    }
+    
+    throw new Error(userMsg);
   }
 
   return resp;
