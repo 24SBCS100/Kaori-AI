@@ -82,6 +82,6 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 This project is licensed under the MIT License.
 
-## This is in Phase 4.5 right now and still in development ... feel free to contact me from my insta @_dark_shades_12_ for more assistance and questions. 
+** This is in Phase 4.5 right now and still in development ... feel free to contact me from my insta @_dark_shades_12_ for more assistance and questions. 
 
-## ~ Sayonara!
+** ~ Sayonara!
