@@ -290,6 +290,12 @@ export default function ChatLayout() {
             window.location.href = match[1];
           }
         }
+        if (tool === "open_youtube" && result.includes("https://www.youtube.com")) {
+          const match = result.match(/(https:\/\/www\.youtube\.com[^\s]*)/);
+          if (match) {
+            window.open(match[1], "_blank");
+          }
+        }
       },
       onDone: () => {
         // Save assistant message locally
@@ -401,6 +407,12 @@ export default function ChatLayout() {
           const match = result.match(/(spotify:[a-zA-Z0-9:]+)/);
           if (match) {
             window.location.href = match[1];
+          }
+        }
+        if (tool === "open_youtube" && result.includes("https://www.youtube.com")) {
+          const match = result.match(/(https:\/\/www\.youtube\.com[^\s]*)/);
+          if (match) {
+            window.open(match[1], "_blank");
           }
         }
       },

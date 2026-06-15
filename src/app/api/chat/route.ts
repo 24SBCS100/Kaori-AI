@@ -118,6 +118,31 @@ async function executeToolCall(
       return "Could not find that on Spotify.";
     }
 
+    if (toolName === "open_youtube") {
+      const query = String(toolInput.videoName || "").trim();
+      if (!query) {
+        return `Found YouTube: https://www.youtube.com`;
+      }
+
+      const duckQuery = `site:youtube.com/watch ${query}`;
+      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(duckQuery)}`;
+      const resp = await fetch(searchUrl, {
+        headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
+      });
+      const html = await resp.text();
+      const resultRegex = /<a rel="nofollow" class="result__a" href="([^"]*)"[^>]*>(.*?)<\/a>/g;
+      
+      let match;
+      while ((match = resultRegex.exec(html)) !== null) {
+        const url = decodeURIComponent(match[1].replace(/\/\/duckduckgo\.com\/l\/\?uddg=/, "").split("&")[0]);
+        const ytMatch = url.match(/youtube\.com\/watch\?v=([a-zA-Z0-9_-]+)/);
+        if (ytMatch) {
+          return `Found YouTube video: https://www.youtube.com/watch?v=${ytMatch[1]}`;
+        }
+      }
+      return `Found YouTube search: https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    }
+
     return `Unknown tool: ${toolName}`;
   } catch (err) {
     return `Tool execution error: ${err instanceof Error ? err.message : "Unknown error"}`;

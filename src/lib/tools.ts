@@ -67,6 +67,20 @@ export const TOOL_DEFINITIONS: AnthropicTool[] = [
       required: ["songName"],
     },
   },
+  {
+    name: "open_youtube",
+    description: "Opens YouTube on the user's device. If a search query or video name is provided, it searches for that video. Use this when the user asks to open YouTube or play a specific video on YouTube.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        videoName: {
+          type: "string",
+          description: "The name of the video to search for and play. Leave empty if the user just wants to open YouTube.",
+        },
+      },
+      required: ["videoName"],
+    },
+  },
 ];
 
 export function getToolByName(name: string) {
