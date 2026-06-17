@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    updateUserProStatus(user.id, isPro);
+    await updateUserProStatus(user.id, isPro);
     logger.info({ userId: user.id, isPro }, "Updated user pro status");
 
     return new Response(JSON.stringify({ success: true, is_pro: isPro }), {

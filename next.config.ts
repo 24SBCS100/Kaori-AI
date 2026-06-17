@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   productionBrowserSourceMaps: false,
-  serverExternalPackages: ["better-sqlite3", "pino", "pino-pretty"],
+  serverExternalPackages: ["pino", "pino-pretty"],
   async headers() {
     return [
       {

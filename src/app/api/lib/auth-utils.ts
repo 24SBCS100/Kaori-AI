@@ -95,7 +95,7 @@ export async function getSessionUser() {
   const payload = verifyAccessToken(token);
   if (!payload) return null;
 
-  const user = findUserById(payload.userId);
+  const user = await findUserById(payload.userId);
   if (!user) return null;
 
   return { id: user.id, name: user.name, email: user.email, is_pro: user.is_pro === 1 };

@@ -1,6 +1,6 @@
 # Kaori AI 🌸
 
-Kaori AI is an advanced, multi-modal AI assistant built with Next.js and SQLite. It goes beyond simple chat by offering long-term memory, scheduled background tasks, web monitoring, and productivity tools, providing a deeply personalized and context-aware experience.
+Kaori AI is an advanced, multi-modal AI assistant built with Next.js and Turso/libSQL. It goes beyond simple chat by offering long-term memory, scheduled background tasks, web monitoring, and productivity tools, providing a deeply personalized and context-aware experience.
 
 ## ✨ Features
 
@@ -15,13 +15,13 @@ Kaori AI is an advanced, multi-modal AI assistant built with Next.js and SQLite.
 
 - **Framework:** [Next.js](https://nextjs.org/) (App Router)
 - **Language:** TypeScript
-- **Database:** SQLite (with WAL mode enabled for high concurrency)
+- **Database:** Turso/libSQL
 - **Authentication:** Custom session-based auth with refresh token rotation + Google OAuth
 - **AI Integration:** Anthropic SDK, Groq (via custom adapter)
 
 ## 🗄️ Database Schema Overview (v9)
 
-The application uses a highly optimized SQLite database designed for edge-like performance.
+The application uses a Turso-hosted libSQL database designed for online deployment.
 
 - **`users` & `auth`**: Handles robust user management, pro tiers, and refresh token rotation.
 - **`conversations` & `messages`**: Stores chat histories, tool usages, and reactions.
@@ -64,7 +64,7 @@ The application uses a highly optimized SQLite database designed for edge-like p
    ```
 
 4. **Initialize Database:**
-   The SQLite database (`schema.sql`) will be automatically applied based on your database configuration scripts.
+   Create a Turso database, set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`, then the app will apply `db/schema.sql` automatically on first database access.
 
 5. **Run the Development Server:**
    ```bash

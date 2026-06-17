@@ -19,9 +19,9 @@ export async function POST(req: Request) {
     const refreshRaw = await getRefreshTokenCookie();
     if (refreshRaw) {
       const hash = hashRefreshToken(refreshRaw);
-      const stored = findRefreshTokenByHash(hash);
+      const stored = await findRefreshTokenByHash(hash);
       if (stored) {
-        deleteRefreshToken(stored.id);
+        await deleteRefreshToken(stored.id);
       }
     }
 

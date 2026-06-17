@@ -4,25 +4,37 @@ import { getSessionUser, requireAjax } from "../lib/auth-utils";
 import {
   getUserConversations,
   createConversation,
-  getDb,
+  deleteUserConversations,
 } from "../lib/db";
 import { validateConversationTitle } from "../lib/validation";
 
 export async function GET() {
-  const user = await getSessionUser();
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  try {
+    const user = await getSessionUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const rawConvs = await getUserConversations(user.id);
+
+    const convs = rawConvs.map((c) => ({
+      id: c.id,
+      title: c.title,
+      isStarred: c.is_starred === 1,
+      createdAt: c.created_at
+        ? new Date(c.created_at * 1000).toISOString()
+        : new Date().toISOString(),
+      updatedAt: c.updated_at
+        ? new Date(c.updated_at * 1000).toISOString()
+        : new Date().toISOString(),
+    }));
+
+    return NextResponse.json(convs);
+  } catch (err) {
+    console.error("[GET /api/chats] Error:", err);
+    const message = err instanceof Error ? err.message : "Internal error";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  const convs = getUserConversations(user.id).map((c) => ({
-    id: c.id,
-    title: c.title,
-    isStarred: c.is_starred === 1,
-    createdAt: new Date(c.created_at * 1000).toISOString(),
-    updatedAt: new Date(c.updated_at * 1000).toISOString(),
-  }));
-
-  return NextResponse.json(convs);
 }
 
 export async function POST(req: NextRequest) {
@@ -40,7 +52,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const title = validateConversationTitle(body.title);
 
-  const conv = createConversation({
+  const conv = await createConversation({
     id: uuid(),
     user_id: user.id,
     title,
@@ -66,18 +78,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const db = getDb();
-  // Using cascading deletes or manual deletion for messages
-  db.transaction(() => {
-    // Delete all messages associated with user's conversations
-    db.prepare(`
-      DELETE FROM messages 
-      WHERE conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)
-    `).run(user.id);
-    
-    // Delete the conversations
-    db.prepare(`DELETE FROM conversations WHERE user_id = ?`).run(user.id);
-  })();
+  await deleteUserConversations(user.id);
 
   return NextResponse.json({ success: true });
 }

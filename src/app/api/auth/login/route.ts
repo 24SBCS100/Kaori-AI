@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
     // Rate limit by IP
     const ip = getClientIp(req);
-    const rateCheck = checkAuthRateLimit(ip);
+    const rateCheck = await checkAuthRateLimit(ip);
     if (!rateCheck.allowed) {
       logger.warn({ ip }, "Auth rate limit hit");
       return NextResponse.json(
@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const user = findUserByEmail(email);
+    const user = await findUserByEmail(email);
     if (!user) {
       return NextResponse.json(
         { error: "Invalid credentials" },
@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     const { raw: refreshRaw, hash: refreshHash } = issueRefreshToken();
 
     // Store refresh token
-    insertRefreshToken({
+    await insertRefreshToken({
       id: crypto.randomUUID(),
       user_id: user.id,
       token_hash: refreshHash,

@@ -3,14 +3,20 @@ import { getSessionUser, requireAjax } from "../../lib/auth-utils";
 import { validateSearchQuery } from "../../lib/validation";
 
 function decodeHtml(value: string): string {
-  return value
+  let decoded = value
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/<[^>]*>/g, "")
-    .trim();
+    .replace(/&#39;/g, "'");
+
+  let previous;
+  do {
+    previous = decoded;
+    decoded = decoded.replace(/<[^>]*>/g, "");
+  } while (decoded !== previous);
+
+  return decoded.trim();
 }
 
 export async function POST(req: NextRequest) {

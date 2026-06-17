@@ -9,7 +9,7 @@ function convertMessages(messages: AnthropicMessage[]) {
       openAiMessages.push({ role: msg.role, content: msg.content });
     } else {
       let textContent = "";
-      let toolCalls: any[] = [];
+      const toolCalls: any[] = [];
       
       for (const block of msg.content) {
         if (block.type === "text") {
@@ -114,7 +114,7 @@ export async function streamOpenAiCompatible({
       try {
         const errJson = JSON.parse(errBody);
         apiMsg = (Array.isArray(errJson) ? errJson[0]?.error?.message : errJson.error?.message) || "";
-      } catch (e) {}
+      } catch {}
 
       // Fallback to searching the raw body if parsing failed or didn't find the message
       const textToSearch = apiMsg || errBody;
@@ -202,7 +202,7 @@ export async function streamOpenAiCompatible({
                delta: { stop_reason: stopReason }
              })}\n\n`));
           }
-        } catch(e) {}
+        } catch {}
       }
     }
   });

@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
       return response;
     }
 
-    upsertOAuthToken({
+    await upsertOAuthToken({
       id: uuid(),
       user_id: user.id,
       provider: "spotify",

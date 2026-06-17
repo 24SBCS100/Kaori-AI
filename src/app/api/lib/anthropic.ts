@@ -93,7 +93,7 @@ export async function streamChatCompletion({
                userMsg = `Model quota ended. Please try again after ${minutes} minute${minutes > 1 ? 's' : ''}.`;
              }
            }
-        } catch(e) {}
+        } catch {}
       }
     } else {
       userMsg += `: ${errBody}`;

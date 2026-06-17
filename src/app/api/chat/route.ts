@@ -189,7 +189,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Chat rate limiting ──
-    const rateCheck = checkChatRateLimit(user.id, user.is_pro);
+    const rateCheck = await checkChatRateLimit(user.id, user.is_pro);
     if (!rateCheck.allowed) {
       return new Response(
         JSON.stringify({
@@ -200,7 +200,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Ownership check ──
-    const conv = findConversation(chatId);
+    const conv = await findConversation(chatId);
     if (!conv || conv.user_id !== user.id) {
       return new Response(JSON.stringify({ error: "Chat not found" }), {
         status: 404,
@@ -210,21 +210,21 @@ export async function POST(req: NextRequest) {
 
     // ── Handle message edit (truncation) ──
     if (editMessageId) {
-      deleteMessagesFrom(chatId, editMessageId);
+      await deleteMessagesFrom(chatId, editMessageId);
     }
 
     // ── Save user message (encrypted) ──
     const userMsgId = editMessageId || uuid();
-    insertMessage({
+    await insertMessage({
       id: userMsgId,
       conversation_id: chatId,
       role: "user",
       content: encryptContent(validatedMessage),
     });
-    touchConversation(chatId);
+    await touchConversation(chatId);
 
     // ── Build message history from DB ──
-    const dbMessages = getConversationMessages(chatId);
+    const dbMessages = await getConversationMessages(chatId);
     const anthropicMessages: AnthropicMessage[] = dbMessages.map((m) => {
       const decrypted = decryptContent(m.content);
       let content: any = decrypted;
@@ -232,7 +232,7 @@ export async function POST(req: NextRequest) {
         if (decrypted.trim().startsWith("[")) {
           content = JSON.parse(decrypted);
         }
-      } catch (e) {}
+      } catch {}
       return {
         role: m.role as "user" | "assistant",
         content,
@@ -261,7 +261,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Dynamic system prompt ──
-    const systemPrompt = buildSystemPrompt(validatedMessage);
+    const systemPrompt = buildSystemPrompt();
 
     // ── Create streaming response ──
     const encoder = new TextEncoder();
@@ -432,7 +432,7 @@ export async function POST(req: NextRequest) {
                 role: "assistant",
                 content: assistantContent,
               });
-              insertMessage({
+              await insertMessage({
                 id: uuid(),
                 conversation_id: chatId,
                 role: "assistant",
@@ -480,7 +480,7 @@ export async function POST(req: NextRequest) {
               }
 
               currentMessages.push({ role: "user", content: toolResults });
-              insertMessage({
+              await insertMessage({
                 id: uuid(),
                 conversation_id: chatId,
                 role: "user",
@@ -496,14 +496,14 @@ export async function POST(req: NextRequest) {
 
           // ── Save assistant message (encrypted) ──
           if (fullAssistantContent.trim()) {
-            insertMessage({
+            await insertMessage({
               id: uuid(),
               conversation_id: chatId,
               role: "assistant",
               content: encryptContent(fullAssistantContent),
             });
           }
-          touchConversation(chatId);
+          await touchConversation(chatId);
 
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`)

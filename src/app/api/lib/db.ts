@@ -1,54 +1,107 @@
-import Database from "better-sqlite3";
-import fs from "fs";
+import {
+  createClient,
+  type Client,
+  type InArgs,
+} from "@tursodatabase/serverless/compat";
+import fs from "fs/promises";
 import path from "path";
 
-// ── Database path ──
-const DB_PATH = path.resolve(process.env.DATABASE_PATH || "./.data/app.db");
+let _db: Client | null = null;
+let _initPromise: Promise<void> | null = null;
 
-// ── Singleton connection ──
-let _db: Database.Database | null = null;
+function createTursoClient(): Client {
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
 
-export function getDb(): Database.Database {
-  if (_db) return _db;
+  if (!url) {
+    throw new Error("TURSO_DATABASE_URL is required for database access.");
+  }
 
-  // Ensure directory exists
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  if (url.startsWith("libsql://") && !authToken) {
+    throw new Error("TURSO_AUTH_TOKEN is required for remote Turso databases.");
+  }
 
-  _db = new Database(DB_PATH);
-  _db.pragma("journal_mode = WAL");
-  _db.pragma("foreign_keys = ON");
+  return createClient({
+    url,
+    authToken,
+  });
+}
 
-  // Apply schema
+function isDuplicateColumnError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("duplicate column");
+}
+
+async function initializeDb(db: Client) {
   const schemaPath = path.join(process.cwd(), "db", "schema.sql");
-  if (fs.existsSync(schemaPath)) {
-    const schema = fs.readFileSync(schemaPath, "utf-8");
-    _db.exec(schema);
-  }
+  const schema = await fs.readFile(schemaPath, "utf-8");
 
-  // Safe migrations
+  await db.execute("PRAGMA foreign_keys = ON");
+  await db.executeMultiple(schema);
+
   try {
-    _db.exec("ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0;");
-  } catch (e: any) {
-    // Ignore if column already exists
-    if (!e.message.includes("duplicate column name")) {
-      console.error("Migration error:", e);
-    }
+    await db.execute(
+      "ALTER TABLE conversations ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0"
+    );
+  } catch (error) {
+    if (!isDuplicateColumnError(error)) throw error;
   }
 
   try {
-    _db.exec("ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0;");
-  } catch (e: any) {
-    if (!e.message.includes("duplicate column name")) {
-      console.error("Migration error:", e);
-    }
+    await db.execute(
+      "ALTER TABLE users ADD COLUMN is_pro INTEGER NOT NULL DEFAULT 0"
+    );
+  } catch (error) {
+    if (!isDuplicateColumnError(error)) throw error;
+  }
+}
+
+export async function getDb(): Promise<Client> {
+  if (!_db) {
+    _db = createTursoClient();
   }
 
+  if (!_initPromise) {
+    _initPromise = initializeDb(_db);
+  }
+
+  await _initPromise;
   return _db;
 }
 
-// ══════════════════════════════════════════
+export function mapRows<T>(result: any): T[] {
+  if (!result.rows || result.rows.length === 0) return [];
+  if (!Array.isArray(result.rows[0])) {
+    return result.rows as T[];
+  }
+  const columns = result.columns || [];
+  return result.rows.map((row: any[]) => {
+    const obj: any = {};
+    columns.forEach((col: string, i: number) => {
+      obj[col] = row[i];
+    });
+    return obj;
+  });
+}
+
+async function getOne<T>(sql: string, args?: InArgs): Promise<T | undefined> {
+  const db = await getDb();
+  const result = await db.execute({ sql, args });
+  const rows = mapRows<T>(result);
+  return rows[0];
+}
+
+async function getAll<T>(sql: string, args?: InArgs): Promise<T[]> {
+  const db = await getDb();
+  const result = await db.execute({ sql, args });
+  return mapRows<T>(result);
+}
+
+async function run(sql: string, args?: InArgs): Promise<void> {
+  const db = await getDb();
+  await db.execute({ sql, args });
+}
+
 // USER HELPERS
-// ══════════════════════════════════════════
 
 export type DBUser = {
   id: string;
@@ -64,42 +117,36 @@ export type DBUser = {
   created_at: number;
 };
 
-export function findUserByEmail(email: string): DBUser | undefined {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
-    .get(email.toLowerCase()) as DBUser | undefined;
+export async function findUserByEmail(email: string): Promise<DBUser | undefined> {
+  return getOne<DBUser>(
+    "SELECT * FROM users WHERE email = ? COLLATE NOCASE",
+    [email.toLowerCase()]
+  );
 }
 
-export function findUserById(id: string): DBUser | undefined {
-  const db = getDb();
-  return db.prepare("SELECT * FROM users WHERE id = ?").get(id) as
-    | DBUser
-    | undefined;
+export async function findUserById(id: string): Promise<DBUser | undefined> {
+  return getOne<DBUser>("SELECT * FROM users WHERE id = ?", [id]);
 }
 
-export function createUser(user: {
+export async function createUser(user: {
   id: string;
   name: string;
   email: string;
   password_hash: string;
-}): DBUser {
-  const db = getDb();
-  db.prepare(
+}): Promise<DBUser> {
+  await run(
     `INSERT INTO users (id, name, email, password_hash)
-     VALUES (@id, @name, @email, @password_hash)`
-  ).run(user);
-  return findUserById(user.id)!;
+     VALUES (?, ?, ?, ?)`,
+    [user.id, user.name, user.email, user.password_hash]
+  );
+  return (await findUserById(user.id))!;
 }
 
-export function updateUserProStatus(id: string, isPro: boolean) {
-  const db = getDb();
-  db.prepare("UPDATE users SET is_pro = ? WHERE id = ?").run(isPro ? 1 : 0, id);
+export async function updateUserProStatus(id: string, isPro: boolean) {
+  await run("UPDATE users SET is_pro = ? WHERE id = ?", [isPro ? 1 : 0, id]);
 }
 
-// ══════════════════════════════════════════
 // CONVERSATION HELPERS
-// ══════════════════════════════════════════
 
 export type DBConversation = {
   id: string;
@@ -112,72 +159,85 @@ export type DBConversation = {
   updated_at: number;
 };
 
-export function getUserConversations(userId: string): DBConversation[] {
-  const db = getDb();
-  return db
-    .prepare(
-      "SELECT * FROM conversations WHERE user_id = ? ORDER BY updated_at DESC"
-    )
-    .all(userId) as DBConversation[];
+export async function getUserConversations(userId: string): Promise<DBConversation[]> {
+  return getAll<DBConversation>(
+    "SELECT * FROM conversations WHERE user_id = ? ORDER BY updated_at DESC",
+    [userId]
+  );
 }
 
-export function findConversation(id: string): DBConversation | undefined {
-  const db = getDb();
-  return db.prepare("SELECT * FROM conversations WHERE id = ?").get(id) as
-    | DBConversation
-    | undefined;
+export async function findConversation(id: string): Promise<DBConversation | undefined> {
+  return getOne<DBConversation>("SELECT * FROM conversations WHERE id = ?", [id]);
 }
 
-export function createConversation(conv: {
+export async function createConversation(conv: {
   id: string;
   user_id: string;
   title: string;
   provider?: string;
   model?: string;
-}): DBConversation {
-  const db = getDb();
-  db.prepare(
+}): Promise<DBConversation> {
+  await run(
     `INSERT INTO conversations (id, user_id, title, provider, model)
-     VALUES (@id, @user_id, @title, @provider, @model)`
-  ).run({
-    id: conv.id,
-    user_id: conv.user_id,
-    title: conv.title,
-    provider: conv.provider || "anthropic",
-    model: conv.model || "claude-sonnet-4-20250514",
-  });
-  return findConversation(conv.id)!;
+     VALUES (?, ?, ?, ?, ?)`,
+    [
+      conv.id,
+      conv.user_id,
+      conv.title,
+      conv.provider || "anthropic",
+      conv.model || "claude-sonnet-4-20250514",
+    ]
+  );
+  return (await findConversation(conv.id))!;
 }
 
-export function updateConversationTitle(id: string, title: string) {
-  const db = getDb();
-  db.prepare(
-    "UPDATE conversations SET title = ?, updated_at = unixepoch() WHERE id = ?"
-  ).run(title, id);
+export async function updateConversationTitle(id: string, title: string) {
+  await run(
+    "UPDATE conversations SET title = ?, updated_at = unixepoch() WHERE id = ?",
+    [title, id]
+  );
 }
 
-export function touchConversation(id: string) {
-  const db = getDb();
-  db.prepare(
-    "UPDATE conversations SET updated_at = unixepoch() WHERE id = ?"
-  ).run(id);
+export async function touchConversation(id: string) {
+  await run("UPDATE conversations SET updated_at = unixepoch() WHERE id = ?", [id]);
 }
 
-export function toggleConversationStar(id: string, isStarred: number) {
-  const db = getDb();
-  db.prepare(
-    "UPDATE conversations SET is_starred = ?, updated_at = unixepoch() WHERE id = ?"
-  ).run(isStarred, id);
+export async function toggleConversationStar(id: string, isStarred: number) {
+  await run(
+    "UPDATE conversations SET is_starred = ?, updated_at = unixepoch() WHERE id = ?",
+    [isStarred, id]
+  );
 }
 
-export function deleteConversation(id: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM conversations WHERE id = ?").run(id);
+export async function deleteConversation(id: string) {
+  const db = await getDb();
+  await db.batch(
+    [
+      { sql: "DELETE FROM messages WHERE conversation_id = ?", args: [id] },
+      { sql: "DELETE FROM conversations WHERE id = ?", args: [id] },
+    ],
+    "write"
+  );
 }
 
-// ══════════════════════════════════════════
+export async function deleteUserConversations(userId: string) {
+  const db = await getDb();
+  await db.batch(
+    [
+      {
+        sql: `DELETE FROM messages
+              WHERE conversation_id IN (
+                SELECT id FROM conversations WHERE user_id = ?
+              )`,
+        args: [userId],
+      },
+      { sql: "DELETE FROM conversations WHERE user_id = ?", args: [userId] },
+    ],
+    "write"
+  );
+}
+
 // MESSAGE HELPERS
-// ══════════════════════════════════════════
 
 export type DBMessage = {
   id: string;
@@ -190,18 +250,16 @@ export type DBMessage = {
   created_at: number;
 };
 
-export function getConversationMessages(
+export async function getConversationMessages(
   conversationId: string
-): DBMessage[] {
-  const db = getDb();
-  return db
-    .prepare(
-      "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC"
-    )
-    .all(conversationId) as DBMessage[];
+): Promise<DBMessage[]> {
+  return getAll<DBMessage>(
+    "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC",
+    [conversationId]
+  );
 }
 
-export function insertMessage(msg: {
+export async function insertMessage(msg: {
   id: string;
   conversation_id: string;
   role: "user" | "assistant" | "tool";
@@ -209,33 +267,44 @@ export function insertMessage(msg: {
   status?: string;
   tool_use_id?: string;
 }) {
-  const db = getDb();
-  db.prepare(
+  await run(
     `INSERT INTO messages (id, conversation_id, role, content, status, tool_use_id)
-     VALUES (@id, @conversation_id, @role, @content, @status, @tool_use_id)`
-  ).run({
-    id: msg.id,
-    conversation_id: msg.conversation_id,
-    role: msg.role,
-    content: msg.content,
-    status: msg.status || "complete",
-    tool_use_id: msg.tool_use_id || null,
-  });
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      msg.id,
+      msg.conversation_id,
+      msg.role,
+      msg.content,
+      msg.status || "complete",
+      msg.tool_use_id || null,
+    ]
+  );
 }
 
-export function deleteMessagesFrom(conversationId: string, messageId: string) {
-  const db = getDb();
-  const targetMsg = db.prepare("SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?").get(messageId, conversationId) as { created_at: number } | undefined;
+export async function deleteMessagesFrom(conversationId: string, messageId: string) {
+  const targetMsg = await getOne<{ created_at: number }>(
+    "SELECT created_at FROM messages WHERE id = ? AND conversation_id = ?",
+    [messageId, conversationId]
+  );
+
   if (targetMsg) {
-    db.prepare("DELETE FROM messages WHERE conversation_id = ? AND created_at >= ?").run(conversationId, targetMsg.created_at);
+    await run("DELETE FROM messages WHERE conversation_id = ? AND created_at >= ?", [
+      conversationId,
+      targetMsg.created_at,
+    ]);
   }
 }
 
-// ══════════════════════════════════════════
 // REFRESH TOKEN HELPERS
-// ══════════════════════════════════════════
 
-export function insertRefreshToken(token: {
+export type DBRefreshToken = {
+  id: string;
+  user_id: string;
+  token_hash: string;
+  expires_at: number;
+};
+
+export async function insertRefreshToken(token: {
   id: string;
   user_id: string;
   token_hash: string;
@@ -243,37 +312,37 @@ export function insertRefreshToken(token: {
   user_agent?: string;
   ip?: string;
 }) {
-  const db = getDb();
-  db.prepare(
+  await run(
     `INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at, user_agent, ip)
-     VALUES (@id, @user_id, @token_hash, @expires_at, @user_agent, @ip)`
-  ).run({
-    ...token,
-    user_agent: token.user_agent || null,
-    ip: token.ip || null,
-  });
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      token.id,
+      token.user_id,
+      token.token_hash,
+      token.expires_at,
+      token.user_agent || null,
+      token.ip || null,
+    ]
+  );
 }
 
-export function findRefreshTokenByHash(
+export async function findRefreshTokenByHash(
   hash: string
-): { id: string; user_id: string; token_hash: string; expires_at: number } | undefined {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM refresh_tokens WHERE token_hash = ?")
-    .get(hash) as any;
+): Promise<DBRefreshToken | undefined> {
+  return getOne<DBRefreshToken>("SELECT * FROM refresh_tokens WHERE token_hash = ?", [
+    hash,
+  ]);
 }
 
-export function deleteRefreshToken(id: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM refresh_tokens WHERE id = ?").run(id);
+export async function deleteRefreshToken(id: string) {
+  await run("DELETE FROM refresh_tokens WHERE id = ?", [id]);
 }
 
-export function deleteUserRefreshTokens(userId: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM refresh_tokens WHERE user_id = ?").run(userId);
+export async function deleteUserRefreshTokens(userId: string) {
+  await run("DELETE FROM refresh_tokens WHERE user_id = ?", [userId]);
 }
 
-// ── OAuth Tokens ──
+// OAuth Tokens
 
 export type DBOAuthToken = {
   id: string;
@@ -286,35 +355,40 @@ export type DBOAuthToken = {
   created_at: number;
 };
 
-export function upsertOAuthToken(token: Omit<DBOAuthToken, "created_at">) {
-  const db = getDb();
-  db.prepare(
+export async function upsertOAuthToken(token: Omit<DBOAuthToken, "created_at">) {
+  await run(
     `INSERT INTO oauth_tokens (id, user_id, provider, access_token_enc, refresh_token_enc, expires_at, scope)
-     VALUES (@id, @user_id, @provider, @access_token_enc, @refresh_token_enc, @expires_at, @scope)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(user_id, provider) DO UPDATE SET
        access_token_enc = excluded.access_token_enc,
        refresh_token_enc = COALESCE(excluded.refresh_token_enc, oauth_tokens.refresh_token_enc),
        expires_at = excluded.expires_at,
-       scope = excluded.scope`
-  ).run({
-    id: token.id,
-    user_id: token.user_id,
-    provider: token.provider,
-    access_token_enc: token.access_token_enc,
-    refresh_token_enc: token.refresh_token_enc || null,
-    expires_at: token.expires_at || null,
-    scope: token.scope || null,
-  });
+       scope = excluded.scope`,
+    [
+      token.id,
+      token.user_id,
+      token.provider,
+      token.access_token_enc,
+      token.refresh_token_enc || null,
+      token.expires_at || null,
+      token.scope || null,
+    ]
+  );
 }
 
-export function getOAuthToken(userId: string, provider: string): DBOAuthToken | undefined {
-  const db = getDb();
-  return db
-    .prepare("SELECT * FROM oauth_tokens WHERE user_id = ? AND provider = ?")
-    .get(userId, provider) as DBOAuthToken | undefined;
+export async function getOAuthToken(
+  userId: string,
+  provider: string
+): Promise<DBOAuthToken | undefined> {
+  return getOne<DBOAuthToken>(
+    "SELECT * FROM oauth_tokens WHERE user_id = ? AND provider = ?",
+    [userId, provider]
+  );
 }
 
-export function deleteOAuthToken(userId: string, provider: string) {
-  const db = getDb();
-  db.prepare("DELETE FROM oauth_tokens WHERE user_id = ? AND provider = ?").run(userId, provider);
+export async function deleteOAuthToken(userId: string, provider: string) {
+  await run("DELETE FROM oauth_tokens WHERE user_id = ? AND provider = ?", [
+    userId,
+    provider,
+  ]);
 }

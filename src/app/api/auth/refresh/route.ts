@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     }
 
     const hash = hashRefreshToken(refreshRaw);
-    const stored = findRefreshTokenByHash(hash);
+    const stored = await findRefreshTokenByHash(hash);
 
     if (!stored || stored.expires_at < Math.floor(Date.now() / 1000)) {
       return NextResponse.json(
@@ -46,9 +46,9 @@ export async function POST(req: Request) {
     }
 
     // Verify user still exists
-    const user = findUserById(stored.user_id);
+    const user = await findUserById(stored.user_id);
     if (!user) {
-      deleteRefreshToken(stored.id);
+      await deleteRefreshToken(stored.id);
       return NextResponse.json(
         { error: "User not found" },
         { status: 401 }
@@ -56,10 +56,10 @@ export async function POST(req: Request) {
     }
 
     // Rotate: delete old, issue new
-    deleteRefreshToken(stored.id);
+    await deleteRefreshToken(stored.id);
 
     const { raw: newRaw, hash: newHash } = issueRefreshToken();
-    insertRefreshToken({
+    await insertRefreshToken({
       id: crypto.randomUUID(),
       user_id: stored.user_id,
       token_hash: newHash,

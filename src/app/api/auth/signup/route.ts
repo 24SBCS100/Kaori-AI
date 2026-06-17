@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     // Rate limit by IP
     const ip = getClientIp(req);
-    const rateCheck = checkAuthRateLimit(ip);
+    const rateCheck = await checkAuthRateLimit(ip);
     if (!rateCheck.allowed) {
       logger.warn({ ip }, "Auth rate limit hit on signup");
       return NextResponse.json(
@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     const email = validateEmail(body.email);
     const password = validatePassword(body.password);
 
-    const existing = findUserByEmail(email);
+    const existing = await findUserByEmail(email);
     if (existing) {
       return NextResponse.json(
         { error: "Email already registered" },
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const user = createUser({
+    const user = await createUser({
       id: uuid(),
       name,
       email,
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     const accessToken = issueAccessToken(user.id, user.email);
     const { raw: refreshRaw, hash: refreshHash } = issueRefreshToken();
 
-    insertRefreshToken({
+    await insertRefreshToken({
       id: crypto.randomUUID(),
       user_id: user.id,
       token_hash: refreshHash,

@@ -73,7 +73,6 @@ export default function ChatInput({
   };
 
   const startVoice = () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     if (!SpeechRecognition) return;
     const recognition = new SpeechRecognition();
@@ -81,7 +80,6 @@ export default function ChatInput({
     recognition.continuous = false;
     recognition.interimResults = false;
     setListening(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     recognition.onresult = (event: any) => {
       const transcript = event.results?.[0]?.[0]?.transcript || "";
       setValue((prev: string) => (prev ? `${prev} ${transcript}` : transcript));

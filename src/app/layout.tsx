@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,8 +26,11 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Roboto:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&family=Poppins:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
-        <script src="/live2dcubismcore.min.js"></script>
-        <script dangerouslySetInnerHTML={{__html: `
+        <Script src="/live2dcubismcore.min.js" strategy="beforeInteractive" />
+        <Script
+          id="kaori-theme-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{__html: `
           (function() {
             try {
               var t = localStorage.getItem('kaori_theme');
@@ -55,7 +59,8 @@ export default function RootLayout({
               }
             } catch(e) {}
           })();
-        `}} />
+        `}}
+        />
       </head>
       <body className="bg-[#fafafa] dark:bg-[#111111] text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
         {children}

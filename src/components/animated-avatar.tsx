@@ -42,6 +42,31 @@ export default function AnimeCharacter({
   const coreRef = useRef<any>(null);
   const blinkIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  function startBlinking(core: any) {
+    if (!core) return;
+
+    if (blinkIntervalRef.current) {
+      clearInterval(blinkIntervalRef.current);
+    }
+
+    blinkIntervalRef.current = setInterval(() => {
+      setSafe(core, "ParamEyeLOpen", 0, 1);
+      setSafe(core, "ParamEyeROpen", 0, 1);
+
+      setTimeout(() => {
+        setSafe(core, "ParamEyeLOpen", 1, 1);
+        setSafe(core, "ParamEyeROpen", 1, 1);
+      }, 120);
+    }, 3500);
+  }
+
+  function applyEmotion(core: any, model: any, currentEmotion: Emotion) {
+    if (!core || !model) return;
+
+    setExpression(core, currentEmotion);
+    playEmotion(model, currentEmotion);
+  }
+
   useEffect(() => {
     let destroyed = false;
     let resizeHandler: (() => void) | null = null;
@@ -185,31 +210,6 @@ export default function AnimeCharacter({
 
     setSafe(core, "ParamMouthOpenY", Math.min(mouthValue, 1.2), 1);
   }, [audioLevel, speaking]);
-
-  function startBlinking(core: any) {
-    if (!core) return;
-
-    if (blinkIntervalRef.current) {
-      clearInterval(blinkIntervalRef.current);
-    }
-
-    blinkIntervalRef.current = setInterval(() => {
-      setSafe(core, "ParamEyeLOpen", 0, 1);
-      setSafe(core, "ParamEyeROpen", 0, 1);
-
-      setTimeout(() => {
-        setSafe(core, "ParamEyeLOpen", 1, 1);
-        setSafe(core, "ParamEyeROpen", 1, 1);
-      }, 120);
-    }, 3500);
-  }
-
-  function applyEmotion(core: any, model: any, currentEmotion: Emotion) {
-    if (!core || !model) return;
-
-    setExpression(core, currentEmotion);
-    playEmotion(model, currentEmotion);
-  }
 
   return (
     <div
