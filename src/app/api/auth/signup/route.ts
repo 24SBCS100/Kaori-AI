@@ -89,7 +89,10 @@ export async function POST(req: NextRequest) {
     if (err instanceof Error && err.message) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
-    logger.error({ err }, "Signup error");
+    logger.error(
+      { errorType: err instanceof Error ? err.name : typeof err },
+      "Signup error"
+    );
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

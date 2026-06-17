@@ -41,6 +41,25 @@ function isPrivateIp(ip: string): boolean {
   return true;
 }
 
+function isHostnameAllowed(hostname: string): boolean {
+  const allowlistEnv = process.env.ALLOWED_FETCH_HOSTS;
+  if (!allowlistEnv) return true;
+
+  const allowlist = allowlistEnv
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+    
+  if (allowlist.length === 0) return true;
+
+  return allowlist.some((allowed) => {
+    if (allowed.startsWith(".")) {
+      return hostname === allowed.slice(1) || hostname.endsWith(allowed);
+    }
+    return hostname === allowed;
+  });
+}
+
 export async function assertPublicHttpUrl(rawUrl: unknown): Promise<URL> {
   if (typeof rawUrl !== "string" || rawUrl.length > 2048) {
     throw new Error("Invalid URL");
@@ -63,6 +82,11 @@ export async function assertPublicHttpUrl(rawUrl: unknown): Promise<URL> {
 
   const hostname = parsed.hostname.toLowerCase();
   const normalizedHostname = hostname.replace(/^\[|\]$/g, "");
+
+  if (!isHostnameAllowed(normalizedHostname)) {
+    throw new Error("Hostname is not allowed by configured allowlist");
+  }
+
   if (
     normalizedHostname === "localhost" ||
     normalizedHostname.endsWith(".localhost") ||

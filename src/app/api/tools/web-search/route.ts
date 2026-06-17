@@ -4,11 +4,11 @@ import { validateSearchQuery } from "../../lib/validation";
 
 function decodeHtml(value: string): string {
   let decoded = value
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
 
   let previous;
   do {
